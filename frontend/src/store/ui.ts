@@ -1,5 +1,29 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { createJSONStorage, persist } from 'zustand/middleware'
+
+const safeStorage = {
+  getItem: (key: string) => {
+    try {
+      return typeof window !== 'undefined' && window.localStorage ? window.localStorage.getItem(key) : null
+    } catch {
+      return null
+    }
+  },
+  setItem: (key: string, value: string) => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) window.localStorage.setItem(key, value)
+    } catch {
+      // ignore storage errors in test or restricted environments
+    }
+  },
+  removeItem: (key: string) => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) window.localStorage.removeItem(key)
+    } catch {
+      // ignore storage errors in test or restricted environments
+    }
+  },
+}
 
 export type Lang = 'sw' | 'en'
 export type Theme = 'light' | 'dark' | 'system'
@@ -17,7 +41,11 @@ export const useUi = create<UiState>()(
       setMenu: (menuOpen) => set({ menuOpen }),
       notify: (toast) => { set({ toast }); setTimeout(() => set((s) => (s.toast === toast ? { toast: '' } : s)), 2600) },
     }),
-    { name: 'sf_ui', partialize: (s) => ({ lang: s.lang, theme: s.theme, collapsed: s.collapsed }) },
+    {
+      name: 'sf_ui',
+      storage: createJSONStorage(() => safeStorage),
+      partialize: (s) => ({ lang: s.lang, theme: s.theme, collapsed: s.collapsed }),
+    },
   ),
 )
 

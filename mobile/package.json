@@ -1,0 +1,51 @@
+{
+  "name": "shopflow-mobile",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "expo-router/entry",
+  "dependencies": {
+    "@noble/hashes": "^1.8.0",
+    "expo": "~58.0.23",
+    "expo-constants": "~58.0.15",
+    "expo-crypto": "~58.0.7",
+    "expo-linking": "~58.0.16",
+    "expo-router": "~58.0.30",
+    "expo-secure-store": "~58.0.2",
+    "expo-splash-screen": "~58.0.13",
+    "expo-sqlite": "~58.0.15",
+    "expo-status-bar": "~58.0.4",
+    "expo-system-ui": "~58.0.7",
+    "react": "19.3.0",
+    "react-native": "0.88.1",
+    "react-native-reanimated": "4.7.1",
+    "react-native-safe-area-context": "~5.11.1",
+    "react-native-screens": "~4.30.1",
+    "react-native-worklets": "0.13.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/react": "~19.3.0",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "android:prebuild": "expo prebuild --platform android",
+    "android:apk:debug": "cd android && ./gradlew --no-daemon assembleDebug",
+    "android:apk:release": "cd android && ./gradlew --no-daemon assembleRelease",
+    "ios": "expo run:ios",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "export:android": "expo export --platform android"
+  },
+  "private": true,
+  "overrides": {
+    "@expo/cli": {
+      "glob": "^14.0.4"
+    },
+    "@expo/fingerprint": {
+      "glob": "^14.0.4",
+      "minimatch": "^11.0.5"
+    }
+  }
+}

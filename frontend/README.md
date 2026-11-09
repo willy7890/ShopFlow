@@ -46,7 +46,7 @@ src/
 ```
 Server state: TanStack Query · App state: Zustand · Forms: React Hook Form + Zod · Charts: Recharts (lazy-loaded) · Icons: Lucide.
 Routes are lazy-loaded. Tailwind colours are CSS variables, so dark mode needs no per-component colours.
-Structure is Tauri-friendly (no server-side code, `base` is relative-safe, storage via IndexedDB).
+This Vite application is the existing browser frontend and is retained for comparison while the product is migrated. It is not the Android application and must not be wrapped in a WebView, Tauri, or Electron. The native Android-first app is in `../mobile/`.
 
 ## Module status (be honest with yourself before shipping)
 | Area | Status |
@@ -61,7 +61,7 @@ Structure is Tauri-friendly (no server-side code, `base` is relative-safe, stora
 | Employees, Stores, Subscription, Settings | Built; see gaps |
 
 ### Known gaps / TODO
-- **Not verified in a real browser by the author.** Type-check, production build and 34 jsdom tests pass; visual QA, camera scanning on real phones, printing and PWA/Tauri packaging still need manual testing.
+- **Not verified in a real browser by the author.** Type-check, production build and 34 jsdom tests pass; visual QA, camera scanning on real phones and printing still need manual testing. These checks do not verify the native Android app or an APK.
 - Camera scanning uses native `BarcodeDetector` (Chrome/Android) with a ZXing fallback; test on your target devices.
 - Offline: only sales are queued; other writes need a connection. Catalog cache is in TanStack Query memory (add `persistQueryClient` for a cold-start offline catalog).
 - Reports and dashboard assume backend-calculated figures; the UI labels estimates as estimates.

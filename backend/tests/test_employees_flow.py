@@ -1,0 +1,117 @@
+from uuid import uuid4
+
+from fastapi.testclient import TestClient
+
+from app.main import app
+
+client = TestClient(app)
+
+
+def _register_owner():
+    test_id = uuid4().hex
+    email = f"owner-{test_id}@example.com"
+    response = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Owner User",
+            "email": email,
+            "password": "StrongPass123!",
+            "business_name": f"Employee Shop {test_id}",
+        },
+    )
+    assert response.status_code == 201, response.text
+    token = response.json()["access_token"]
+    business_response = client.get(
+        "/api/v1/businesses",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert business_response.status_code == 200, business_response.text
+    business = business_response.json()[0]
+    return token, business["id"]
+
+
+def test_employee_management_and_store_access():
+    owner_token, business_id = _register_owner()
+    owner_headers = {"Authorization": f"Bearer {owner_token}", "X-Business-ID": business_id}
+
+    store_response = client.get(f"/api/v1/businesses/{business_id}/stores", headers=owner_headers)
+    assert store_response.status_code == 200, store_response.text
+    first_store = store_response.json()[0]
+    second_store = client.post(
+        f"/api/v1/businesses/{business_id}/stores",
+        json={"name": "Warehouse", "code": "WHR", "address": "Kisutu"},
+        headers=owner_headers,
+    )
+    assert second_store.status_code == 201, second_store.text
+    second_store_id = second_store.json()["id"]
+
+    team_member_email = f"employee-{uuid4().hex}@example.com"
+    register_response = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Cashier User",
+            "email": team_member_email,
+            "password": "StrongPass123!",
+            "business_name": f"Team Member Business {uuid4().hex}",
+        },
+    )
+    assert register_response.status_code == 201, register_response.text
+    employee_token = register_response.json()["access_token"]
+
+    invite = client.post(
+        "/api/v1/employees/invite",
+        json={
+            "email": team_member_email,
+            "role": "cashier",
+            "store_ids": [first_store["id"], second_store_id],
+            "permissions": ["manage_sales", "view_dashboard"],
+        },
+        headers=owner_headers,
+    )
+    assert invite.status_code == 201, invite.text
+    invited_employee = invite.json()
+    assert invited_employee["role"] == "cashier"
+    assert set(invited_employee["store_access"]) == {first_store["id"], second_store_id}
+    assert set(invited_employee["permissions"]) == {"manage_sales", "view_dashboard"}
+
+    employees = client.get("/api/v1/employees", headers=owner_headers)
+    assert employees.status_code == 200, employees.text
+    employee_payload = employees.json()
+    assert any(employee["email"] == team_member_email for employee in employee_payload)
+
+    employee_headers = {"Authorization": f"Bearer {employee_token}", "X-Business-ID": business_id}
+    employee_member = next(item for item in employee_payload if item["email"] == team_member_email)
+    employee_self_lookup = client.get(f"/api/v1/employees/{employee_member['id']}", headers=employee_headers)
+    assert employee_self_lookup.status_code == 200, employee_self_lookup.text
+    assert employee_self_lookup.json()["email"] == team_member_email
+    patch_response = client.patch(
+        f"/api/v1/employees/{employee_member['id']}",
+        json={
+            "role": "store_manager",
+            "store_ids": [first_store["id"]],
+            "permissions": ["manage_inventory", "manage_sales", "view_reports"],
+        },
+        headers=owner_headers,
+    )
+    assert patch_response.status_code == 200, patch_response.text
+    patched = patch_response.json()
+    assert patched["role"] == "store_manager"
+    assert patched["store_access"] == [first_store["id"]]
+    assert set(patched["permissions"]) == {"manage_inventory", "manage_sales", "view_reports"}
+
+    business_access = client.get(
+        "/api/v1/businesses/access",
+        headers={"Authorization": f"Bearer {employee_token}"},
+    )
+    assert business_access.status_code == 200, business_access.text
+    employee_access = next(item for item in business_access.json() if item["business_id"] == business_id)
+    assert employee_access["store_ids"] == [first_store["id"]]
+    assert [store["id"] for store in employee_access["stores"]] == [first_store["id"]]
+    assert set(employee_access["permissions"]) == {"manage_inventory", "manage_sales", "view_reports"}
+
+    access_check = client.get(
+        "/api/v1/inventory/stock",
+        params={"store_id": second_store_id},
+        headers=employee_headers,
+    )
+    assert access_check.status_code == 403, access_check.text

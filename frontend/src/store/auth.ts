@@ -1,6 +1,30 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { createJSONStorage, persist } from 'zustand/middleware'
 import type { Me } from '@/api/types'
+
+const safeStorage = {
+  getItem: (key: string) => {
+    try {
+      return typeof window !== 'undefined' && window.localStorage ? window.localStorage.getItem(key) : null
+    } catch {
+      return null
+    }
+  },
+  setItem: (key: string, value: string) => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) window.localStorage.setItem(key, value)
+    } catch {
+      // ignore storage errors in test or restricted environments
+    }
+  },
+  removeItem: (key: string) => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) window.localStorage.removeItem(key)
+    } catch {
+      // ignore storage errors in test or restricted environments
+    }
+  },
+}
 
 interface AuthState {
   token: string | null
@@ -29,6 +53,10 @@ export const useAuth = create<AuthState>()(
       can: (p) => !!get().me?.user.permissions.includes(p),
       feature: (k) => !!get().me?.entitlements.features[k],
     }),
-    { name: 'sf_auth', partialize: (s) => ({ token: s.token, me: s.me, storeId: s.storeId }) },
+    {
+      name: 'sf_auth',
+      storage: createJSONStorage(() => safeStorage),
+      partialize: (s) => ({ token: s.token, me: s.me, storeId: s.storeId }),
+    },
   ),
 )

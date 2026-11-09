@@ -9,7 +9,14 @@ import { useAuth } from '../store/auth'
 import { mockApi } from '../api/mock'
 
 beforeAll(async () => {
+  class ResizeObserverMock {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
   Object.defineProperty(window, 'matchMedia', { value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) })
+  Object.defineProperty(window, 'ResizeObserver', { value: ResizeObserverMock, writable: true, configurable: true })
+  Object.defineProperty(globalThis, 'ResizeObserver', { value: ResizeObserverMock, writable: true, configurable: true })
   const { token, me } = await mockApi.auth.login('owner@example.com', 'password1')
   useAuth.getState().setSession(token, me)
 })
