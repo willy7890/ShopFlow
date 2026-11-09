@@ -32,8 +32,10 @@ The APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`. A sig
 - Cash POS with quantity, stock validation in inventory mode, cash tender/change and atomic local sale/outbox records.
 - Customer debtors and supplier creditors with customer-linked partial-payment sales, collections, payable bills and payments, and store-scoped balances. Supplier bills record payables only and do not receive stock.
 - POS barcode scanning with camera permission handling, external keyboard-scanner/manual barcode entry, exact local lookup, repeated-scan quantity increments and unknown-code product registration.
+- Native camera barcode decoding for common retail formats, with a visible scan target and flashlight control.
+- Local cashbook with manually recorded income/expenses and automatic cash entries for sales, customer collections and supplier payments. Local 7/30/90-day reports cover sales, cash flow, outstanding balances and top products.
 - Local analytics and notifications that summarize today’s sales, top sellers and low-stock alerts directly from SQLite records.
 - Online account registration/sign-in with SecureStore-backed tokens, plus server-validated business/store selection.
-- SQLite schema migrations through v5; existing v1–v4 sales and sale-item/payment history are preserved during upgrade. No API sync is enabled.
+- SQLite schema migrations through v6; existing v1–v5 sales and account-payment history are preserved and reflected in the cashbook during upgrade. No API sync is enabled.
 
 The app starts with no sample business, products, sales or financial records. Setup data is entered by the operator. Passwords are stored as salted PBKDF2 verifiers, not plaintext. SQLite is not encrypted at rest, and local login is device access control rather than protection against database extraction. Online authentication currently verifies identity and membership only: catalog, inventory, sales and account operations still persist locally and are not shared with the web app. Do not use the mobile app as a synchronized point of sale yet. Full sales history/refund flows, finance reporting, integrations, backup/sync and release workflows remain in later phases. The local analytics/notification layer is on-device analytics only; it does not connect to external AI services or push notifications.

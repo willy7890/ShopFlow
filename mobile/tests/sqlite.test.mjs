@@ -170,7 +170,8 @@ test('SQLite migrations, offline sale persistence and stock rollback are consist
     assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM payments')).count, 1)
 
     const outbox = await database.getFirstAsync(
-      'SELECT client_id AS clientId, status, payload_json AS payloadJson FROM outbox',
+      `SELECT client_id AS clientId, status, payload_json AS payloadJson
+       FROM outbox WHERE entity_type = 'sale'`,
     )
     assert.equal(outbox.clientId, sale.saleId)
     assert.equal(outbox.status, 'pending')
@@ -387,9 +388,11 @@ test('customer debts and supplier payables are isolated, balanced and atomic', a
     await recordSupplierBill(database, workspace, supplier.id, 800, 'Flour delivery invoice', randomUUID)
     assert.equal((await listSuppliers(database, workspace))[0].balanceMinor, 800)
     assert.equal((await listProducts(database, workspace))[0].quantity, originalStock)
+    assert.equal((await getCashbookTotals(database, workspace)).expenseMinor, 0)
     await assert.rejects(recordSupplierPayment(database, workspace, supplier.id, 801, '', randomUUID), /cannot exceed the outstanding balance/)
     await recordSupplierPayment(database, workspace, supplier.id, 300, '', randomUUID)
     assert.equal((await listSuppliers(database, workspace))[0].balanceMinor, 500)
+    assert.equal((await getCashbookTotals(database, workspace)).expenseMinor, 300)
     await createManualCashbookEntry(database, workspace, {
       entryType: 'income',
       category: 'Other income',
