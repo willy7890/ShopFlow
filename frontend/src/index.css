@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root{--bg:#faf9f7;--bg-rgb:250 249 247;--sf:#fff;--tx:#10282c;--tx-rgb:16 40 44;--mu:#5b7478;--mu-rgb:91 116 120;--bd:#dde6e8;--bd-rgb:221 230 232;--ac:#0f8a98;--ac-rgb:15 138 152;--ac2:#0b6b77;--ac2-rgb:11 107 119;--on:#fff;--er:#b42318;--er-rgb:180 35 24;--ok:#1a7f4b;--ok-rgb:26 127 75;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0c1417;--bg-rgb:12 20 23;--sf:#121e22;--sf-rgb:18 30 34;--tx:#eef6f7;--tx-rgb:238 246 247;--mu:#9fb7bb;--mu-rgb:159 183 187;--bd:#2a4a52;--bd-rgb:42 74 82;--ac:#2fc4d3;--ac-rgb:47 196 211;--ac2:#5ad8e4;--ac2-rgb:90 216 228;--on:#03161a;--on-rgb:3 22 26;--er:#ff8a80;--er-rgb:255 138 128;--ok:#5fd394;--ok-rgb:95 211 148;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0c1417;--bg-rgb:12 20 23;--sf:#121e22;--sf-rgb:18 30 34;--tx:#eef6f7;--tx-rgb:238 246 247;--mu:#9fb7bb;--mu-rgb:159 183 187;--bd:#2a4a52;--bd-rgb:42 74 82;--ac:#2fc4d3;--ac-rgb:47 196 211;--ac2:#5ad8e4;--ac2-rgb:90 216 228;--on:#03161a;--on-rgb:3 22 26;--er:#ff8a80;--er-rgb:255 138 128;--ok:#5fd394;--ok-rgb:95 211 148;color-scheme:dark}
+
+html,body,#root{min-height:100%}
+body{@apply bg-bg text-tx font-sans antialiased;padding-top:env(safe-area-inset-top,0px)}
+:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+@layer components{
+  .inp{@apply w-full min-h-[46px] px-3 py-2 rounded-lg border border-bd bg-sf text-tx}
+  .btn{@apply inline-flex items-center justify-center gap-2 min-h-[44px] px-4 rounded-lg bg-ac text-on font-bold cursor-pointer hover:bg-ac2 disabled:opacity-60 disabled:cursor-not-allowed}
+  .btn-ghost{@apply bg-transparent text-tx border border-bd hover:bg-bd/40}
+  .lnk{@apply text-ac font-semibold bg-transparent border-0 cursor-pointer p-1 hover:underline}
+  .chip{@apply inline-block text-xs px-2 py-0.5 rounded-full font-semibold bg-ok/15 text-ok}
+  .chip-p{@apply bg-ac/15 text-ac}
+  .chip-e{@apply bg-er/15 text-er}
+  .th{@apply text-left text-xs font-semibold text-mu px-3 py-2 border-b border-bd whitespace-nowrap}
+  .td{@apply px-3 py-2 border-b border-bd text-sm align-top}
+}

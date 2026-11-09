@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="sw">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ShopFlow</title>
+<style>
+:root{--bg:#faf9f7;--sf:#fff;--tx:#1d1b19;--mu:#6b655e;--bd:#e4e0da;--ac:#e8590c;--ac2:#c94a05;--on:#fff;--er:#b42318;--ok:#1a7f4b;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#171615;--sf:#211f1d;--tx:#f1eee9;--mu:#a59f97;--bd:#38342f;--ac:#ff7a33;--ac2:#ff9457;--on:#1b1009;--er:#ff8a80;--ok:#5fd394;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#171615;--sf:#211f1d;--tx:#f1eee9;--mu:#a59f97;--bd:#38342f;--ac:#ff7a33;--ac2:#ff9457;--on:#1b1009;--er:#ff8a80;--ok:#5fd394;color-scheme:dark}
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.5 "Segoe UI",system-ui,-apple-system,Roboto,sans-serif;min-height:100vh}
+.shell{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);min-height:100vh}
+aside{background:var(--ac);color:#fff;padding:40px;display:flex;flex-direction:column;justify-content:space-between}
+aside h2{font-size:34px;line-height:1.15;margin:0 0 12px;max-width:14ch;letter-spacing:-.02em}
+aside p{margin:0;max-width:34ch;opacity:.92}
+.logo{font-weight:800;font-size:22px;letter-spacing:-.02em;display:flex;align-items:center;gap:10px}
+.logo i{width:30px;height:30px;border-radius:8px;background:#fff;color:var(--ac);display:grid;place-items:center;font-style:normal;font-size:17px}
+.receipt{font:14px/1.6 ui-monospace,Menlo,Consolas,monospace;background:rgba(255,255,255,.14);border-radius:10px;padding:14px 16px;max-width:300px}
+.receipt div{display:flex;justify-content:space-between}
+.main{display:flex;flex-direction:column;min-width:0}
+.top{display:flex;justify-content:flex-end;gap:8px;padding:16px 24px}
+.seg{display:inline-flex;border:1px solid var(--bd);border-radius:8px;overflow:hidden}
+.seg button,.ic{background:var(--sf);color:var(--mu);border:0;padding:7px 12px;font:600 13px inherit;cursor:pointer;min-height:36px}
+.seg button[aria-pressed="true"]{background:var(--ac);color:var(--on)}
+.ic{border:1px solid var(--bd);border-radius:8px;font-size:15px}
+.card{width:100%;max-width:460px;margin:auto;padding:8px 24px 40px}
+.wide{max-width:600px}
+h1{font-size:28px;letter-spacing:-.02em;margin:0 0 6px;line-height:1.2}
+.sub{color:var(--mu);margin:0 0 24px}
+.f{display:block;margin-bottom:16px}
+.f span{display:block;font-size:14px;font-weight:600;margin-bottom:6px}
+input,select{width:100%;min-height:46px;padding:10px 12px;border:1px solid var(--bd);border-radius:8px;background:var(--sf);color:var(--tx);font:inherit}
+input:focus,select:focus,button:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+.f em{display:block;color:var(--er);font-size:13px;font-style:normal;margin-top:4px}
+.f.bad input{border-color:var(--er)}
+.btn{width:100%;min-height:48px;border:0;border-radius:8px;background:var(--ac);color:var(--on);font:700 16px inherit;cursor:pointer}
+.btn:hover{background:var(--ac2)}
+.btn:disabled{opacity:.6;cursor:wait}
+.btn.ghost{background:transparent;color:var(--tx);border:1px solid var(--bd)}
+.row{display:flex;gap:12px}.row>*{flex:1}
+.lnk{background:none;border:0;color:var(--ac);font:600 14px inherit;cursor:pointer;padding:6px 0}
+.alt{text-align:center;color:var(--mu);margin-top:18px;font-size:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.mode{text-align:left;background:var(--sf);color:var(--tx);border:1.5px solid var(--bd);border-radius:10px;padding:16px;cursor:pointer;font:inherit;min-height:48px}
+.mode b{display:block;margin-bottom:4px}.mode small{color:var(--mu);font-size:13px;line-height:1.4;display:block}
+.mode[aria-pressed="true"]{border-color:var(--ac);background:color-mix(in srgb,var(--ac) 8%,var(--sf))}
+.steps{display:flex;gap:6px;margin-bottom:24px}
+.steps i{flex:1;height:4px;border-radius:2px;background:var(--bd)}.steps i.on{background:var(--ac)}
+.stl{color:var(--mu);font-size:13px;margin-bottom:6px}
+.nav{display:flex;gap:12px;margin-top:8px}.nav .btn{flex:1}.nav .ghost{flex:0 0 38%}
+.sum{border:1px solid var(--bd);border-radius:10px;background:var(--sf);margin-bottom:20px}
+.sum div{display:flex;justify-content:space-between;gap:12px;padding:10px 14px;border-bottom:1px solid var(--bd);font-size:14px}
+.sum div:last-child{border:0}.sum span{color:var(--mu)}
+.note{font-size:13px;color:var(--mu);background:var(--sf);border:1px dashed var(--bd);border-radius:8px;padding:10px 12px;margin-top:20px}
+.ok{color:var(--ok);font-weight:600}
+@media (max-width:800px){.shell{grid-template-columns:1fr}aside{display:none}.card{padding:8px 18px 32px}.grid2{grid-template-columns:1fr}.row{flex-direction:column;gap:0}}
+@media (prefers-reduced-motion:no-preference){.btn{transition:background .15s}}
+:root{--ac:#0f8a98;--ac2:#0b6b77;--on:#fff}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--ac:#2fc4d3;--ac2:#5ad8e4;--on:#03161a}}
+:root[data-theme="dark"]{--ac:#2fc4d3;--ac2:#5ad8e4;--on:#03161a}
+body.auth{--bg:#03090d;--sf:#0a1a1f;--tx:#fff;--mu:#9fb7bb;--bd:#2a4a52;--er:#ff8a80;--ok:#5fd394}
+body.auth .shell{grid-template-columns:1fr}body.auth aside{display:none}
+body.auth .main{background:radial-gradient(ellipse at 50% 45%,#0b2d34 0,#03090d 68%)}
+.stage{display:grid;place-items:center;padding:12px 16px 40px}
+.frame{position:relative;width:min(900px,100%);min-height:500px;display:flex;border:1.5px solid #46dbe9;background:#050f13;overflow:hidden;box-shadow:0 0 30px rgba(47,196,211,.5),inset 0 0 44px rgba(47,196,211,.14)}
+.hero{position:absolute;inset:0;background:linear-gradient(135deg,#0f3a42 0%,#1d7f8c 55%,#35b5c3 100%);clip-path:polygon(34% 0,100% 0,100% 100%,0 100%);display:flex;align-items:center;justify-content:flex-end;padding-right:8%;text-align:right}
+.rev .hero{clip-path:polygon(0 0,66% 0,100% 100%,0 100%);justify-content:flex-start;padding:0 0 0 8%;text-align:left}
+.hero h2{margin:0;max-width:7ch;font-size:clamp(28px,4.4vw,46px);line-height:1.05;text-transform:uppercase;color:#fff;text-shadow:0 2px 0 rgba(0,0,0,.35),0 0 18px rgba(255,255,255,.25)}
+.fm{position:relative;z-index:1;width:46%;padding:48px 40px}.rev .fm{margin-left:auto}
+.frame .card{margin:0;padding:0;max-width:none}
+.frame h1{text-align:center;font-size:30px;color:#e9fbfd}
+.frame .sub{text-align:center}
+.frame .f{position:relative}
+.frame .f input{background:transparent;border:0;border-bottom:1.5px solid #8fb2b8;border-radius:0;padding:8px 30px 8px 0;color:#fff}
+.frame .f.bad input{border-bottom-color:var(--er)}
+.frame .f span{color:#4fd3e0;font-weight:500;margin-bottom:0}
+.ico{position:absolute;right:2px;bottom:11px;color:#cfeff3;font-size:16px;line-height:1}
+.frame .btn{border-radius:999px;color:#fff;background:linear-gradient(#35b5c3,#14606b);box-shadow:0 0 16px rgba(47,196,211,.45),inset 0 1px 0 rgba(255,255,255,.3)}
+.frame .btn:hover{filter:brightness(1.1)}
+.frame .lnk{color:#4fe3f2}
+@media (max-width:800px){.frame{display:block;min-height:0}.hero,.rev .hero{position:relative;clip-path:polygon(0 0,100% 0,100% 76%,0 100%);justify-content:center;text-align:center;padding:30px 20px 44px}.hero h2{max-width:none}.fm{width:100%;padding:12px 24px 32px}}
+body.auth{--bg:#fff;--sf:#fff;--tx:#10282c;--mu:#5b7478;--bd:#cfe0e3;--er:#b42318;--ok:#1a7f4b;--lb:#0f8a98;--ul:#9ab5ba;--fr:#fff;--ic:#4a6a70;--mb:#fff;--fs:0 12px 40px rgba(15,138,152,.2)}
+:root[data-theme="dark"] body.auth{--bg:#03090d;--sf:#0a1a1f;--tx:#fff;--mu:#9fb7bb;--bd:#2a4a52;--er:#ff8a80;--ok:#5fd394;--lb:#4fd3e0;--ul:#8fb2b8;--fr:#050f13;--ic:#cfeff3;--mb:radial-gradient(ellipse at 50% 45%,#0b2d34 0,#03090d 68%);--fs:0 0 30px rgba(47,196,211,.5),inset 0 0 44px rgba(47,196,211,.14)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) body.auth{--bg:#03090d;--sf:#0a1a1f;--tx:#fff;--mu:#9fb7bb;--bd:#2a4a52;--er:#ff8a80;--ok:#5fd394;--lb:#4fd3e0;--ul:#8fb2b8;--fr:#050f13;--ic:#cfeff3;--mb:radial-gradient(ellipse at 50% 45%,#0b2d34 0,#03090d 68%);--fs:0 0 30px rgba(47,196,211,.5),inset 0 0 44px rgba(47,196,211,.14)}}
+body.auth .main{background:var(--mb)}
+body.auth .frame{background:var(--fr);border-color:var(--lb);box-shadow:var(--fs)}
+body.auth .frame h1{color:var(--tx)}
+body.auth .frame .f span{color:var(--lb)}
+body.auth .frame .f input{color:var(--tx);border-bottom-color:var(--ul);padding-right:38px}
+body.auth .frame .f.bad input{border-bottom-color:var(--er)}
+body.auth .frame .lnk{color:var(--lb)}
+body.auth .ico{color:var(--ic);top:33px;bottom:auto}
+.eye{position:absolute;right:-4px;top:20px;height:44px;min-width:36px;display:grid;place-items:center;background:none;border:0;padding:0;color:var(--ic);cursor:pointer}
+.eye:hover{color:var(--lb)}
+body.ws .shell{display:none}
+.w{display:grid;grid-template-columns:232px minmax(0,1fr);min-height:100vh}
+.sb{background:var(--sf);border-right:1px solid var(--bd);padding:14px 10px;display:flex;flex-direction:column;gap:2px;position:sticky;top:0;height:100vh;overflow:auto}
+.sb .logo{padding:6px 8px 14px;color:var(--tx)}.sb .logo i{background:var(--ac);color:var(--on)}
+.nv{display:flex;align-items:center;gap:12px;padding:9px 10px;border-radius:8px;border:0;background:none;color:var(--mu);font:600 14px inherit;cursor:pointer;text-align:left;min-height:40px}
+.nv b{width:20px;text-align:center;font-weight:400;font-size:16px}.nv:hover{color:var(--tx)}
+.nv[aria-current="page"]{background:color-mix(in srgb,var(--ac) 14%,transparent);color:var(--tx)}
+.hd{display:flex;align-items:center;gap:10px;padding:10px 20px;border-bottom:1px solid var(--bd);background:var(--sf);position:sticky;top:0;z-index:5;flex-wrap:wrap}
+.hd select,.ph select{width:auto;min-height:38px;padding:6px 10px}
+.sp{flex:1}.mb,.bn{display:none}
+.pg{padding:20px;max-width:1200px}
+.ph{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}.ph h1{margin:0;font-size:24px}
+.kp{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:1px;background:var(--bd);border:1px solid var(--bd);border-radius:10px;overflow:hidden;margin-bottom:24px}
+.kp div{background:var(--sf);padding:14px 16px}.kp small{color:var(--mu);font-size:13px;display:block}.kp b{font-size:21px;letter-spacing:-.02em}
+.gr{display:grid;grid-template-columns:3fr 2fr;gap:24px}
+.pn{border-top:1px solid var(--bd);padding-top:12px;margin-bottom:24px}.pn h3{margin:0 0 10px;font-size:15px}
+.tb{width:100%;border-collapse:collapse;font-size:14px}.tb td{padding:9px 0;border-bottom:1px solid var(--bd);vertical-align:top}.tb td:last-child{text-align:right;white-space:nowrap}
+.chip{font-size:12px;padding:2px 8px;border-radius:99px;background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok);font-weight:600}
+.chip.p{color:var(--ac);background:color-mix(in srgb,var(--ac) 14%,transparent)}
+.sk{height:76px;border-radius:8px;background:var(--bd);opacity:.45}
+@media (min-width:801px){.w.c{grid-template-columns:68px minmax(0,1fr)}.c .nv span,.c .logo span{display:none}}
+@media (max-width:800px){.w{grid-template-columns:1fr}.dk{display:none}.mb{display:inline-block}
+.sb{position:fixed;inset:0 auto 0 0;width:260px;z-index:20;transform:translateX(-100%);padding-top:calc(14px + env(safe-area-inset-top,0px))}.sb.o{transform:none;box-shadow:0 0 0 100vmax rgba(0,0,0,.45)}
+.gr{grid-template-columns:1fr;gap:0}.pg{padding:16px 16px 84px}.hd{padding:8px 12px}
+.bn{display:flex;position:fixed;left:0;right:0;bottom:0;background:var(--sf);border-top:1px solid var(--bd);z-index:6;padding-bottom:env(safe-area-inset-bottom,0px)}
+.bn button{flex:1;background:none;border:0;color:var(--mu);font:600 11px inherit;padding:8px 2px;min-height:52px;cursor:pointer}.bn b{display:block;font-size:17px;font-weight:400}.bn button[aria-current="page"]{color:var(--ac)}}
+.ov{overflow-x:auto}.au{width:auto;padding:0 18px}
+.vb{border:1px solid var(--bd);border-radius:10px;padding:12px 12px 4px;margin-bottom:12px;background:var(--sf)}
+.pt th{font-size:13px;color:var(--mu);text-align:left;font-weight:600;padding:8px 14px 8px 0;border-bottom:1px solid var(--bd);white-space:nowrap}
+.pt td{padding:9px 14px 9px 0;white-space:nowrap}.pt td:last-child{text-align:left}
+.cr{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--bd)}.cr small{color:var(--mu)}
+.chip.e{color:var(--er);background:color-mix(in srgb,var(--er) 14%,transparent)}
+#tst{position:fixed;left:50%;bottom:calc(76px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:10px 16px;border-radius:8px;opacity:0;pointer-events:none;z-index:50;font-weight:600}#tst.on{opacity:1}
+.pos{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:24px;align-items:start}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.tile{display:flex;flex-direction:column;gap:4px;text-align:left;background:var(--sf);border:1px solid var(--bd);border-radius:10px;padding:12px;color:var(--tx);font:inherit;cursor:pointer;min-height:92px}
+.tile:hover:not(:disabled){border-color:var(--ac)}.tile:disabled{opacity:.45;cursor:not-allowed}.tile span{color:var(--ac);font-weight:700}.tile small{color:var(--mu);margin-top:auto}
+.cartp{position:sticky;top:76px;border:1px solid var(--bd);border-radius:12px;background:var(--sf);padding:16px;max-height:calc(100vh - 92px);overflow:auto}
+.cl{display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd);font-size:14px}
+.qt{display:flex;align-items:center;gap:8px}.qt .ic{min-width:34px;min-height:34px;padding:0}
+.cb{display:none}
+.rov{position:fixed;inset:0;background:rgba(0,0,0,.5);display:grid;place-items:center;z-index:40;padding:16px}
+.rcp{background:var(--sf);color:var(--tx);border-radius:12px;padding:20px;width:min(380px,100%);max-height:90vh;overflow:auto;font:14px/1.6 ui-monospace,Menlo,Consolas,monospace}
+.rl{display:flex;justify-content:space-between;gap:12px}.rcp hr{border:0;border-top:1px dashed var(--bd)}
+@media (max-width:800px){.pos{grid-template-columns:1fr}.cartp{position:static;max-height:none}.cb{display:block;position:fixed;left:12px;right:12px;bottom:calc(64px + env(safe-area-inset-bottom,0px));width:auto;z-index:7}.cl{grid-template-columns:1fr auto auto}}
+@media print{.hd,.sb,.bn,.pm>.pos,.ra,.cb{display:none!important}.rov{position:static;background:none}}
+
+.aiw{display:grid;grid-template-columns:220px minmax(0,1fr);gap:20px;align-items:start}
+.aih{display:flex;flex-direction:column;gap:4px}.aih .nv{min-height:36px}.aih .nv span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.msgs{display:flex;flex-direction:column;gap:10px;min-height:260px;max-height:calc(100vh - 330px);overflow:auto;padding:4px 2px}
+.bub{max-width:88%;padding:10px 14px;border-radius:12px;font-size:15px}.bub p{margin:0 0 6px}.bub ul{margin:4px 0 8px;padding-left:18px}
+.bu{align-self:flex-end;background:var(--ac);color:var(--on)}.ba{align-self:flex-start;background:var(--sf);border:1px solid var(--bd)}
+.acs{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.ac2{border:1px solid var(--bd);border-radius:8px;padding:8px 12px;background:var(--bg)}.ac2 small{display:block;color:var(--mu);font-size:12px}.ac2 b{font-size:17px}
+.ctx{display:block;color:var(--mu);font-size:12px}.sg{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+@media (max-width:800px){.aiw{grid-template-columns:1fr}.aih{flex-direction:row;overflow-x:auto}.aih .btn{width:auto;white-space:nowrap}.aih .nv{flex:0 0 auto;max-width:160px}.msgs{max-height:none}}
+.pillc{border:1px solid var(--bd);background:var(--sf);color:var(--ok);border-radius:99px;padding:6px 12px;font:600 13px inherit;cursor:pointer;min-height:36px}
+.pillc.off{color:var(--er);border-color:var(--er)}progress{width:200px;accent-color:var(--ac)}
+.vw{position:relative;background:#000;border-radius:10px;overflow:hidden;aspect-ratio:4/3}.vw video{width:100%;height:100%;object-fit:cover;display:block}
+.ln{position:absolute;left:8%;right:8%;top:50%;height:2px;background:var(--ac);box-shadow:0 0 12px var(--ac)}.scp{width:min(460px,100%)}
+.pv{width:96px;height:96px;object-fit:cover;border-radius:10px;border:1px solid var(--bd)}.pv.e{display:grid;place-items:center;font-size:28px;background:var(--sf)}
+.ph2{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.pcs{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.th{width:36px;height:36px;object-fit:cover;border-radius:6px;vertical-align:middle;margin-right:8px}.ti{width:100%;height:64px;object-fit:cover;border-radius:6px}
+</style>
+</head>
+<body>
+<div id="ws"></div>
+<div class="shell">
+<aside>
+ <div class="logo"><i>S</i>ShopFlow</div>
+ <div><h2 id="tag"></h2><p id="tag2"></p></div>
+ <div class="receipt" aria-hidden="true"><div><span>Soda x3</span><span>3,000</span></div><div><span>Sukari 1kg</span><span>3,500</span></div><div><span>Mafuta</span><span>6,000</span></div><div><b>TZS</b><b>12,500</b></div></div>
+</aside>
+<div class="main">
+ <div class="top">
+  <div class="seg" role="group" aria-label="Language"><button data-a="lang" data-v="sw">Kiswahili</button><button data-a="lang" data-v="en">English</button></div>
+  <button class="ic" data-a="theme" id="thm" aria-label="Theme">◐</button>
+ </div>
+ <div id="app"></div>
+</div>
+</div>
+<script>
+const T={
+sw:{show:"Onyesha/ficha nenosiri",wl:"Karibu!",wb:"Karibu tena!",tag:"Uza haraka. Jua biashara yako.",tag2:"Mauzo, stoo, madeni na ripoti sehemu moja, hata bila intaneti.",
+login:"Ingia",loginSub:"Karibu tena kwenye ShopFlow.",email:"Barua pepe",pass:"Nenosiri",forgot:"Umesahau nenosiri?",noAcc:"Huna akaunti?",haveAcc:"Tayari una akaunti?",
+reg:"Fungua akaunti",regSub:"Anza kusimamia duka lako leo.",name:"Jina kamili",create:"Fungua akaunti",send:"Tuma kiungo",
+fTitle:"Weka upya nenosiri",fSub:"Tutatuma kiungo cha kuweka upya nenosiri kwenye barua pepe yako.",sent:"Kiungo kimetumwa. Angalia barua pepe yako.",back:"Rudi",next:"Endelea",skip:"Ruka",wait:"Tafadhali subiri…",
+req:"Sehemu hii inahitajika",bademail:"Barua pepe si sahihi",minpass:"Nenosiri liwe na herufi angalau 8",
+s:["Biashara","Aina ya uendeshaji","Duka la kwanza","Lugha na mwonekano","Wafanyakazi","Kamilisha"],
+bName:"Jina la biashara",bType:"Aina ya biashara",phone:"Namba ya simu",emailOpt:"Barua pepe (si lazima)",addr:"Anuani",region:"Mkoa",cur:"Sarafu",tz:"Saa za eneo",
+types:{duka:"Duka la rejareja",super:"Supermarket",whole:"Jumla",other:"Nyingine"},
+m1:"Smart Inventory POS",m1d:"Sajili bidhaa, simamia stoo, changanua barcode na ufuatilie manunuzi.",m2:"Mauzo ya Haraka (Sales Book)",m2d:"Rekodi mauzo, matumizi, madeni na pesa bila kusajili kila bidhaa.",
+sName:"Jina la duka",sAddr:"Anuani ya duka",lang:"Lugha",theme:"Mwonekano",light:"Mwanga",dark:"Giza",auto:"Mfumo",
+inv:"Alika mfanyakazi (barua pepe)",invH:"Unaweza kuwaalika baadaye kutoka Mipangilio.",
+fin:"Tayari kuanza",finSub:"Hakiki taarifa zako kabla ya kumaliza.",mode:"Uendeshaji",store:"Duka",go:"Maliza na uanze",
+done:"Umefanikiwa",doneSub:"Dashibodi inajengwa katika Awamu ya 2.",mock:"Onyesho: mfumo wa majaribio (mock), bado haujaunganishwa na FastAPI.",out:"Anza upya"},
+en:{show:"Show or hide password",wl:"Welcome!",wb:"Welcome back!",tag:"Sell fast. Know your business.",tag2:"Sales, stock, debts and reports in one place, even without internet.",
+login:"Sign in",loginSub:"Welcome back to ShopFlow.",email:"Email",pass:"Password",forgot:"Forgot your password?",noAcc:"Don’t have an account?",haveAcc:"Already have an account?",
+reg:"Create account",regSub:"Start managing your shop today.",name:"Full name",create:"Create account",send:"Send reset link",
+fTitle:"Reset your password",fSub:"We’ll email you a link to set a new password.",sent:"Link sent. Check your email.",back:"Back",next:"Continue",skip:"Skip",wait:"Please wait…",
+req:"This field is required",bademail:"Enter a valid email address",minpass:"Password must be at least 8 characters",
+s:["Business","Operating mode","First store","Language and look","Employees","Finish"],
+bName:"Business name",bType:"Business type",phone:"Phone number",emailOpt:"Email (optional)",addr:"Address",region:"Region",cur:"Currency",tz:"Timezone",
+types:{duka:"Retail shop",super:"Supermarket",whole:"Wholesale",other:"Other"},
+m1:"Smart Inventory POS",m1d:"Register products, manage stock, scan barcodes and track purchases.",m2:"Quick Sales (Sales Book)",m2d:"Record sales, expenses, debts and cash flow without registering every product.",
+sName:"Store name",sAddr:"Store address",lang:"Language",theme:"Appearance",light:"Light",dark:"Dark",auto:"System",
+inv:"Invite an employee (email)",invH:"You can invite people later from Settings.",
+fin:"Ready to start",finSub:"Review your details before finishing.",mode:"Mode",store:"Store",go:"Finish and start",
+done:"You’re all set",doneSub:"The dashboard is built in Phase 2.",mock:"Preview: mock adapter, not yet connected to FastAPI.",out:"Start over"}};
+const ld=(k,d)=>{try{return localStorage.getItem(k)||d}catch(e){return d}};
+const sv=(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}};
+const S={lang:ld('sf_lang','sw'),theme:ld('sf_theme',''),view:'login',step:1,busy:false,err:{},sent:false,
+ d:{type:'duka',mode:'pos',cur:'TZS',tz:'Africa/Dar_es_Salaam',region:'Dar es Salaam'}};
+const $=s=>document.querySelector(s),t=k=>T[S.lang][k],esc=v=>String(v||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+const EYE='<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYEOFF='<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.9 17.9A10.9 10.9 0 0 1 12 19C5.6 19 2 12 2 12a18.5 18.5 0 0 1 5.1-5.9M9.9 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a18.6 18.6 0 0 1-2.2 3.2M14.1 14.1a3 3 0 1 1-4.2-4.2M1 1l22 22"/></svg>';
+const mock=ms=>new Promise(r=>setTimeout(r,ms));
+function check(list){S.err={};list.forEach(n=>{const v=(S.d[n]||'').trim();
+ if(!v)S.err[n]='req';else if((n==='email')&&!/^\S+@\S+\.\S+$/.test(v))S.err[n]='bademail';else if(n==='password'&&v.length<8)S.err[n]='minpass'});
+ return !Object.keys(S.err).length}
+function fld(n,l,type='text',opt){const e=S.err[n];return `<label class="f${e?' bad':''}"><span>${l}</span>${({name:'☺',email:'✉',password:''})[n]?`<b class="ico">${({name:'☺',email:'✉'})[n]}</b>`:''}${n==='password'?`<button type="button" class="eye" data-a="eye" aria-label="${t('show')}" aria-pressed="${!!S.show}">${S.show?EYEOFF:EYE}</button>`:''}<input name="${n}" type="${n==='password'&&S.show?'text':type}" value="${esc(S.d[n])}" ${e?'aria-invalid="true"':''} ${opt?'':'required'} autocomplete="${n==='password'?'current-password':n==='email'?'email':'off'}">${e?`<em>${t(e)}</em>`:''}</label>`}
+function btn(l,a,cls=''){return `<button class="btn ${cls}" data-a="${a}" ${S.busy?'disabled':''}>${S.busy&&!cls?t('wait'):l}</button>`}
+function auth(){const v=S.view;return `<div class="stage"><div class="frame${v==='register'?' rev':''}"><div class="hero"><h2>${t(v==='register'?'wl':'wb')}</h2></div><div class="fm">${auth0()}</div></div></div>`}
+function auth0(){const v=S.view;
+ if(v==='login')return `<div class="card"><h1>${t('login')}</h1><p class="sub">${t('loginSub')}</p><form data-f="login">${fld('email',t('email'),'email')}${fld('password',t('pass'),'password')}<button type="button" class="lnk" data-a="go" data-v="forgot">${t('forgot')}</button>${btn(t('login'),'login')}</form><p class="alt">${t('noAcc')} <button class="lnk" data-a="go" data-v="register">${t('reg')}</button></p></div>`;
+ if(v==='register')return `<div class="card"><h1>${t('reg')}</h1><p class="sub">${t('regSub')}</p><form data-f="register">${fld('name',t('name'))}${fld('email',t('email'),'email')}${fld('password',t('pass'),'password')}${btn(t('create'),'register')}</form><p class="alt">${t('haveAcc')} <button class="lnk" data-a="go" data-v="login">${t('login')}</button></p></div>`;
+ return `<div class="card"><h1>${t('fTitle')}</h1><p class="sub">${t('fSub')}</p><form data-f="forgot">${fld('email',t('email'),'email')}${S.sent?`<p class="ok" role="status">${t('sent')}</p>`:''}${btn(t('send'),'forgot')}</form><p class="alt"><button class="lnk" data-a="go" data-v="login">${t('back')}</button></p></div>`}
+function onboard(){const s=S.step,d=S.d;let b='';
+ if(s===1)b=fld('bName',t('bName'))+`<label class="f"><span>${t('bType')}</span><select name="type">${Object.entries(t('types')).map(([k,v])=>`<option value="${k}" ${d.type===k?'selected':''}>${v}</option>`).join('')}</select></label><div class="row">${fld('phone',t('phone'),'tel')}${fld('bEmail',t('emailOpt'),'email',1)}</div>${fld('addr',t('addr'))}<div class="row">${fld('region',t('region'))}${fld('cur',t('cur'))}</div>${fld('tz',t('tz'))}`;
+ if(s===2)b=`<div class="grid2">${[['pos','m1'],['quick','m2']].map(([k,m])=>`<button class="mode" data-a="mode" data-v="${k}" aria-pressed="${d.mode===k}"><b>${t(m)}</b><small>${t(m+'d')}</small></button>`).join('')}</div>`;
+ if(s===3)b=fld('sName',t('sName'))+fld('sAddr',t('sAddr'),'text',1);
+ if(s===4)b=`<span class="stl">${t('lang')}</span><div class="seg" style="margin-bottom:20px"><button data-a="lang" data-v="sw" aria-pressed="${S.lang==='sw'}">Kiswahili</button><button data-a="lang" data-v="en" aria-pressed="${S.lang==='en'}">English</button></div><span class="stl" style="display:block">${t('theme')}</span><div class="seg">${[['light','light'],['dark','dark'],['','auto']].map(([k,l])=>`<button data-a="th" data-v="${k}" aria-pressed="${S.theme===k}">${t(l)}</button>`).join('')}</div>`;
+ if(s===5)b=fld('invite',t('inv'),'email',1)+`<p class="sub">${t('invH')}</p>`;
+ if(s===6)b=`<h1 style="font-size:22px">${t('fin')}</h1><p class="sub">${t('finSub')}</p><div class="sum"><div><span>${t('bName')}</span><b>${esc(d.bName)}</b></div><div><span>${t('mode')}</span><b>${t(d.mode==='pos'?'m1':'m2')}</b></div><div><span>${t('store')}</span><b>${esc(d.sName)}</b></div><div><span>${t('cur')}</span><b>${esc(d.cur)}</b></div></div>`;
+ const opt=s===5||s===3&&0;
+ return `<div class="card wide"><div class="steps" aria-hidden="true">${[1,2,3,4,5,6].map(i=>`<i class="${i<=s?'on':''}"></i>`).join('')}</div><div class="stl">${s}/6 · ${t('s')[s-1]}</div><form data-f="step">${b}<div class="nav">${s>1?`<button type="button" class="btn ghost" data-a="prev">${t('back')}</button>`:''}${btn(s===6?t('go'):t('next'),'step')}</div></form></div>`}
+function done(){return `<div class="card"><h1>${t('done')}</h1><p class="sub">${t('doneSub')}</p><div class="sum"><div><span>${t('bName')}</span><b>${esc(S.d.bName||'—')}</b></div><div><span>${t('mode')}</span><b>${t(S.d.mode==='pos'?'m1':'m2')}</b></div></div><button class="btn ghost" data-a="reset">${t('out')}</button><p class="note">${t('mock')}</p></div>`}
+function render(){document.documentElement.lang=S.lang;document.body.classList.toggle('auth',['login','register','forgot'].includes(S.view));
+ const r=document.documentElement;if(S.theme)r.dataset.theme=S.theme;else delete r.dataset.theme;
+ $('#tag').textContent=t('tag');$('#tag2').textContent=t('tag2');
+ document.querySelectorAll('.top [data-a="lang"]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.v===S.lang));
+ $('#app').innerHTML=S.view==='onboard'?onboard():S.view==='done'?done():auth()}
+async function submit(kind){
+ if(kind==='login'&&!check(['email','password']))return render();
+ if(kind==='register'&&!check(['name','email','password']))return render();
+ if(kind==='forgot'&&!check(['email']))return render();
+ if(kind==='step'){const m={1:['bName','phone','addr','region','cur','tz'],3:['sName'],}[S.step]||[];if(!check(m))return render();
+  if(S.step<6){S.step++;return render()}}
+ S.busy=true;render();await mock(800);S.busy=false;
+ if(kind==='login'){S.view='app'}else if(kind==='register'){S.view='onboard';S.step=1}
+ else if(kind==='forgot'){S.sent=true}else if(kind==='step'){S.view='app'}
+ render()}
+document.addEventListener('input',e=>{if(e.target.name)S.d[e.target.name]=e.target.value});
+document.addEventListener('submit',e=>{e.preventDefault();submit(e.target.dataset.f)});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;const a=b.dataset.a,v=b.dataset.v;
+ if(a==='lang'){S.lang=v;sv('sf_lang',v)}
+ else if(a==='theme'){const dark=S.theme?S.theme==='dark':matchMedia('(prefers-color-scheme:dark)').matches;S.theme=dark?'light':'dark';sv('sf_theme',S.theme)}
+ else if(a==='th'){S.theme=v;sv('sf_theme',v)}
+ else if(a==='go'){S.view=v;S.err={};S.sent=false}
+ else if(a==='mode'){S.d.mode=v}
+ else if(a==='eye'){S.show=!S.show}
+ else if(a==='prev'){S.step--;S.err={}}
+ else if(a==='reset'){S.view='login';S.step=1;S.d={type:'duka',mode:'pos',cur:'TZS',tz:'Africa/Dar_es_Salaam',region:'Dar es Salaam'}}
+ else return;
+ if(a==='lang'||a==='theme'||a==='th'||a==='go'||a==='mode'||a==='prev'||a==='reset'||a==='eye')render()});
+render();
+</script>
+<script>
+Object.assign(T.sw,{nav:{dash:"Dashibodi",pos:"Kituo cha Mauzo (POS)",products:"Bidhaa",categories:"Makundi ya Bidhaa",inventory:"Stoo",purchases:"Manunuzi",sales:"Mauzo",invoices:"Ankara",customers:"Wateja",suppliers:"Wasambazaji",expenses:"Matumizi",debts:"Madeni",cashbook:"Kitabu cha Fedha",reports:"Ripoti",ai:"Msaidizi wa AI",employees:"Wafanyakazi",stores:"Maduka na Matawi",subscription:"Usajili",settings:"Mipangilio"},
+per:{today:"Leo",yest:"Jana",week:"Wiki hii",month:"Mwezi huu",year:"Mwaka huu",custom:"Kipindi maalum"},days:["Jtt","Jnn","Jtn","Alh","Iju","Jmo","Jpl"],
+k_sales:"Mauzo",k_rec:"Pesa iliyopokelewa",k_debt:"Madeni yaliyobaki",k_exp:"Matumizi",k_gp:"Faida ghafi",k_net:"Faida halisi",est:"makadirio",
+c_sales:"Mauzo kwa siku",recent:"Miamala ya hivi karibuni",top:"Bidhaa zinazouzwa sana",low:"Bidhaa Zimekaribia Kuisha",left:"zimebaki",units:"vipande",storesP:"Utendaji wa maduka",aiT:"Ushauri wa AI",aiRec:"Pendekezo, si muamala",
+allst:"Maduka yote",mainSt:"Duka Kuu",branch:"Tawi la 2",walk:"Mteja wa kawaida",synced:"Imesawazishwa",pend:"Inasubiri kusawazishwa",myshop:"Duka Langu",
+soon:"Skrini hii itajengwa katika awamu ijayo.",mockn:"Data ni ya majaribio (mock). Itatoka FastAPI baadaye.",prof:"Wasifu wa biashara",role:"Wadhifa",owner:"Mmiliki",
+mnote:"Kubadilisha aina ya uendeshaji hubadilisha menyu na dashibodi.",mq:"Mauzo ya Haraka",mp:"Smart POS",logout:"Toka",ctx:"Kipindi",
+aiPos:"Mauzo ya Ijumaa ndiyo ya juu zaidi. Fikiria kuongeza stoo ya sukari kabla ya wikendi.",aiQ:"Madeni ni sehemu kubwa ya mauzo. Wakumbushe wateja wenye madeni ya muda mrefu."});
+Object.assign(T.en,{nav:{dash:"Dashboard",pos:"Point of Sale",products:"Products",categories:"Categories",inventory:"Inventory",purchases:"Purchases",sales:"Sales",invoices:"Invoices",customers:"Customers",suppliers:"Suppliers",expenses:"Expenses",debts:"Debts",cashbook:"Cashbook",reports:"Reports",ai:"AI Assistant",employees:"Employees",stores:"Stores and Branches",subscription:"Subscription",settings:"Settings"},
+per:{today:"Today",yest:"Yesterday",week:"This week",month:"This month",year:"This year",custom:"Custom range"},days:["Mon","Tue","Wed","Thu","Fri","Sat","Sun"],
+k_sales:"Sales",k_rec:"Money received",k_debt:"Outstanding debts",k_exp:"Expenses",k_gp:"Gross profit",k_net:"Net operating profit",est:"estimate",
+c_sales:"Sales by day",recent:"Recent transactions",top:"Top-selling products",low:"Low stock",left:"left",units:"units",storesP:"Store performance",aiT:"AI insight",aiRec:"Recommendation, not a transaction",
+allst:"All stores",mainSt:"Main store",branch:"Branch 2",walk:"Walk-in customer",synced:"Synced",pend:"Pending sync",myshop:"My Shop",
+soon:"This screen is built in a later phase.",mockn:"Preview data (mock). It will come from FastAPI later.",prof:"Business profile",role:"Role",owner:"Owner",
+mnote:"Changing the operating mode changes the menu and the dashboard.",mq:"Quick Sales",mp:"Smart POS",logout:"Log out",ctx:"Period",
+aiPos:"Friday sales are the highest. Consider restocking sugar before the weekend.",aiQ:"Debts are a large share of sales. Remind customers with long-overdue balances."});
+const NAV=[['dash','▦'],['pos','◉'],['products','▣'],['categories','☰'],['inventory','▥'],['purchases','⇩'],['sales','↗'],['invoices','▤'],['customers','☺'],['suppliers','⛟'],['expenses','⇧'],['debts','⚑'],['cashbook','▭'],['reports','◔'],['ai','✦'],['employees','⚇'],['stores','⌂'],['subscription','★'],['settings','⚙']];
+const QH=['products','categories','inventory','purchases'],PF={today:1,yest:.9,week:6.4,month:27,year:310,custom:14},SF={all:1,s1:.62,s2:.38};
+Object.assign(S,{page:'dash',coll:false,menu:false,per:'today',store:'all',ld:false});
+const tz2=n=>'TZS '+Math.round(n).toLocaleString('en-US');
+const stn=k=>k==='all'?t('allst'):k==='s1'?(S.d.sName||t('mainSt')):(S.d.sName2||t('branch'));
+function dt(){const f=PF[S.per]*SF[S.store],sales=185000*f,rec=sales*.78,gp=sales*.27,exp=sales*.14;return{sales,rec,debt:sales-rec,exp,gp,net:(S.d.mode==='quick'?rec:gp)-exp}}
+function dash(){if(S.ld)return `<div class="pg"><div class="sk"></div><div class="sk" style="margin-top:16px;height:240px"></div></div>`;
+ const d=dt(),q=S.d.mode==='quick',k=[[t('k_sales'),d.sales],[t('k_rec'),d.rec],[t('k_debt'),d.debt],[t('k_exp'),d.exp]];
+ if(!q)k.push([t('k_gp'),d.gp]);k.push([`${t('k_net')} (${t('est')})`,d.net]);
+ const bars=[.7,.9,.8,1.1,1.3,1,1.2].map(v=>v*d.sales/7),mx=Math.max(...bars);
+ const svg=`<svg viewBox="0 0 420 150" width="100%" role="img" aria-label="${t('c_sales')}">${bars.map((v,i)=>{const h=v/mx*115;return `<rect x="${i*58+14}" y="${128-h}" width="38" height="${h}" rx="3" style="fill:var(--ac)"/><text x="${i*58+33}" y="145" text-anchor="middle" font-size="11" style="fill:var(--mu)">${t('days')[i]}</text>`}).join('')}</svg>`;
+ const rows=[['INV-0148',t('walk'),'Cash',18500,0],['INV-0147','Mama Neema','Credit',42000,0],['INV-0146',t('walk'),'M-Pesa',7500,1],['INV-0145',t('walk'),'Cash',12000,0],['INV-0144','Duka la Juma','Bank',96000,0]].map(r=>`<tr><td>${r[0]}<br><small style="color:var(--mu)">${r[1]} · ${r[2]}</small></td><td><span class="chip${r[4]?' p':''}">${t(r[4]?'pend':'synced')}</span></td><td>${tz2(r[3])}</td></tr>`).join('');
+ const top=[['Sukari 1kg',82],['Mafuta ya alizeti 1L',64],['Pepsi 500ml',51],['Unga wa ngano 2kg',44]].map(r=>`<tr><td>${r[0]}</td><td>${r[1]} ${t('units')}</td></tr>`).join('');
+ const low=[['Sukari 1kg',6],['Maji 1.5L',3],['Sabuni ya unga',0]].map(r=>`<tr><td>${r[0]}</td><td>${r[1]} ${t('left')}</td></tr>`).join('');
+ const sp=S.store==='all'?`<div class="pn"><h3>${t('storesP')}</h3><table class="tb">${['s1','s2'].map(s=>`<tr><td>${stn(s)}</td><td>${tz2(d.sales*SF[s])}</td></tr>`).join('')}</table></div>`:'';
+ return `<div class="pg"><div class="ph"><h1>${t('nav').dash}</h1><span class="sp"></span><select data-sel="per" aria-label="${t('ctx')}">${Object.entries(t('per')).map(([x,v])=>`<option value="${x}" ${S.per===x?'selected':''}>${v}</option>`).join('')}</select>${S.per==='custom'?'<input type="date" style="width:auto;min-height:38px"><input type="date" style="width:auto;min-height:38px">':''}</div>
+ <div class="kp">${k.map(x=>`<div><small>${x[0]}</small><b>${tz2(x[1])}</b></div>`).join('')}</div>
+ <div class="gr"><div><div class="pn"><h3>${t('c_sales')}</h3>${svg}</div><div class="pn"><h3>${t('recent')}</h3><table class="tb">${rows}</table></div></div>
+ <div>${q?'':`<div class="pn"><h3>${t('top')}</h3><table class="tb">${top}</table></div><div class="pn"><h3>${t('low')}</h3><table class="tb">${low}</table></div>`}${sp}
+ <div class="pn"><h3>${t('aiT')}</h3><p style="margin:0 0 6px">${t(q?'aiQ':'aiPos')}</p><small style="color:var(--mu)">${t('aiRec')} · ${t('ctx')}: ${t('per')[S.per]} · ${stn(S.store)}</small></div></div></div><p class="note">${t('mockn')}</p></div>`}
+function sett(){const sg=(a,list,cur)=>`<div class="seg">${list.map(([v,l])=>`<button data-a="${a}" data-v="${v}" aria-pressed="${cur===v}">${l}</button>`).join('')}</div>`;
+ return `<div class="pg" style="max-width:640px"><h1>${t('nav').settings}</h1><div class="pn"><h3>${t('prof')}</h3>${fld('bName',t('bName'))}<div class="sum"><div><span>${t('cur')}</span><b>${esc(S.d.cur)}</b></div><div><span>${t('tz')}</span><b>${esc(S.d.tz)}</b></div><div><span>${t('role')}</span><b>${t('owner')}</b></div></div></div>
+ <div class="pn"><h3>${t('mode')}</h3>${sg('mode',[['pos',t('mp')],['quick',t('mq')]],S.d.mode)}<p class="sub" style="margin-top:8px">${t('mnote')}</p></div>
+ <div class="pn"><h3>${t('lang')}</h3>${sg('lang',[['sw','Kiswahili'],['en','English']],S.lang)}</div>
+ <div class="pn"><h3>${t('theme')}</h3>${sg('th',[['light',t('light')],['dark',t('dark')],['',t('auto')]],S.theme)}</div></div>`}
+function wsx(){const q=S.d.mode==='quick',it=NAV.filter(([i])=>!(q&&QH.includes(i))&&can(i)),n=t('nav'),bn=['dash','pos','sales','ai','settings'];
+ const pg=!can(S.page)?lock():S.page==='dash'?dash():S.page==='settings'?sett():PG[S.page]?PG[S.page]():`<div class="pg"><h1>${n[S.page]}</h1><p class="sub">${t('soon')}</p></div>`;
+ return `<div class="w${S.coll?' c':''}"><nav class="sb${S.menu?' o':''}" aria-label="Menu"><div class="logo"><i>S</i><span>ShopFlow</span></div>${it.map(([i,g])=>`<button class="nv" data-a="nav" data-v="${i}" ${S.page===i?'aria-current="page"':''}><b>${g}</b><span>${n[i]}</span></button>`).join('')}</nav>
+ <div style="min-width:0"><header class="hd"><button class="ic mb" data-a="menu" aria-label="Menu">☰</button><button class="ic dk" data-a="col" aria-label="Menu">⇔</button><b>${esc(S.d.bName||t('myshop'))}</b><select data-sel="store" aria-label="${t('store')}">${['all','s1','s2'].map(s=>`<option value="${s}" ${S.store===s?'selected':''}>${stn(s)}</option>`).join('')}</select><span class="sp"></span>${pill()}<div class="seg">${['sw','en'].map(l=>`<button data-a="lang" data-v="${l}" aria-pressed="${S.lang===l}">${l.toUpperCase()}</button>`).join('')}</div><button class="ic" data-a="theme" aria-label="${t('theme')}">◐</button><button class="ic" data-a="out" aria-label="${t('logout')}">⎋</button></header>${pg}</div>
+ <nav class="bn">${bn.filter(i=>!(q&&QH.includes(i))&&can(i)).map(i=>`<button data-a="nav" data-v="${i}" ${S.page===i?'aria-current="page"':''}><b>${NAV.find(x=>x[0]===i)[1]}</b>${n[i]}</button>`).join('')}</nav></div>`}
+const _r=render;
+render=function(){const w=S.view==='app';document.body.classList.toggle('ws',w);$('#ws').innerHTML=w?wsx():'';
+ if(w){document.body.classList.remove('auth');const r=document.documentElement;r.lang=S.lang;if(S.theme)r.dataset.theme=S.theme;else delete r.dataset.theme;return}_r()};
+function load(){S.ld=true;render();setTimeout(()=>{S.ld=false;render()},450)}
+document.addEventListener('change',e=>{const s=e.target.dataset.sel;if(s==='store'){S.store=e.target.value;load()}if(s==='per'){S.per=e.target.value;load()}});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;const a=b.dataset.a,v=b.dataset.v;
+ if(a==='nav'){S.page=v;S.menu=false;render()}else if(a==='col'){S.coll=!S.coll;render()}else if(a==='menu'){S.menu=!S.menu;render()}else if(a==='out'){S.view='login';S.page='dash';render()}});
+</script>
+<script>
+const L={p_add:["Ongeza Bidhaa","Add Product"],p_edit:["Hariri bidhaa","Edit product"],p_s:["Tafuta bidhaa au barcode","Search product or barcode"],p_allc:["Makundi yote","All categories"],
+p_all:["Zote","All"],p_ok:["Ipo","In stock"],p_low:["Inakaribia kuisha","Low"],p_out:["Imeisha","Out"],p_name:["Jina la bidhaa","Product name"],p_cat:["Kundi","Category"],p_brand:["Chapa (brand)","Brand"],p_unit:["Kipimo","Unit"],
+p_var:["Aina / ukubwa","Variant"],p_bc:["Barcode","Barcode"],p_sku:["SKU","SKU"],p_buy:["Bei ya kununua","Purchase price"],p_sell:["Bei ya kuuza","Selling price"],p_st:["Stoo ya kuanzia","Opening stock"],p_stc:["Stoo","Stock"],p_min:["Kiwango cha chini","Minimum"],
+p_addv:["+ Ongeza aina","+ Add variant"],p_del:["Ondoa aina","Remove variant"],p_save:["Hifadhi","Save"],p_cancel:["Ghairi","Cancel"],p_arch:["Weka kumbukumbu","Archive"],p_conf:["Thibitisha","Confirm"],p_saved:["Imehifadhiwa","Saved"],
+p_none:["Hakuna bidhaa. Ongeza bidhaa ya kwanza.","No products found. Add your first product."],p_note:["Stoo ya sasa hubadilishwa kupitia Marekebisho (Stoo) tu.","Current stock changes only through Adjustments (Inventory)."],
+p_bcn:["Mchoro wa barcode ni wa kuonyesha tu.","The barcode drawing is for display only."],p_pos:["Weka namba kubwa kuliko 0","Enter a number above 0"],p_dup:["Tayari ipo","Already exists"],p_edt:["Hariri","Edit"],
+c_add:["Ongeza kundi","Add category"],c_name:["Jina la kundi","Category name"],c_par:["Kundi mama","Parent category"],c_top:["(Kundi kuu)","(Top level)"],c_pc:["bidhaa","products"],c_has:["Kundi lina bidhaa. Hamisha bidhaa kwanza.","Category has products. Move them first."],c_s:["Tafuta kundi","Search category"],
+i_cur:["Stoo ya sasa","Current stock"],i_mov:["Mienendo ya stoo","Movements"],i_adj:["Marekebisho","Adjustments"],i_cost:["Thamani ya stoo (bei ya kununua)","Stock value (cost)"],i_ret:["Thamani ya mauzo","Retail value"],
+i_date:["Tarehe","Date"],i_type:["Aina","Type"],i_qty:["Idadi","Qty"],i_ref:["Kumbukumbu","Reference"],i_user:["Mtumiaji","User"],i_reason:["Sababu","Reason"],i_aq:["Idadi (+ au -)","Quantity (+ or -)"],i_note:["Maelezo","Note"],
+i_rec:["Rekodi marekebisho","Record adjustment"],i_neg:["Stoo haiwezi kuwa chini ya 0","Stock cannot go below 0"],i_nz:["Weka namba isiyo 0","Enter a non-zero number"],i_later:["Uhamisho wa stoo na hesabu ya stoo vitaongezwa baadaye.","Stock transfers and stock counts come later."],
+m_opening:["Stoo ya kuanzia","Opening stock"],m_adjust:["Marekebisho","Adjustment"],m_sale:["Mauzo","Sale"],m_purchase:["Manunuzi","Purchase"],
+r_damaged:["Imeharibika","Damaged"],r_counted:["Hesabu ya stoo","Stock count"],r_found:["Imepatikana","Found"],r_other:["Nyingine","Other"],pick:["Chagua…","Select…"]};
+for(const k in L){T.sw[k]=L[k][0];T.en[k]=L[k][1]}
+Object.assign(S,{cats:[{id:1,n:'Vinywaji',p:0},{id:2,n:'Soda',p:1},{id:3,n:'Maji',p:1},{id:4,n:'Vyakula',p:0},{id:5,n:'Usafi',p:0}],
+prods:[{id:1,n:'Pepsi',cat:2,br:'Pepsi',un:'chupa',vs:[{id:11,l:'300ml',bc:'6001234500011',sku:'PEP-300',buy:400,sell:600,st:48,min:12},{id:12,l:'500ml',bc:'6001234500028',sku:'PEP-500',buy:600,sell:1000,st:36,min:12},{id:13,l:'1.25L',bc:'6001234500035',sku:'PEP-125',buy:1100,sell:1500,st:10,min:12},{id:14,l:'2L',bc:'6001234500042',sku:'PEP-2L',buy:1500,sell:2000,st:0,min:6}]},
+{id:2,n:'Sukari 1kg',cat:4,br:'',un:'kg',vs:[{id:21,l:'',bc:'6009876500011',sku:'SUK-1',buy:3200,sell:3500,st:6,min:10}]},
+{id:3,n:'Mafuta ya alizeti 1L',cat:4,br:'',un:'l',vs:[{id:31,l:'',bc:'6009876500028',sku:'MAF-1',buy:4800,sell:5500,st:24,min:8}]},
+{id:4,n:'Maji 1.5L',cat:3,br:'',un:'chupa',vs:[{id:41,l:'',bc:'6009876500035',sku:'MAJ-15',buy:700,sell:1000,st:3,min:10}]},
+{id:5,n:'Sabuni ya unga',cat:5,br:'',un:'pc',vs:[{id:51,l:'',bc:'',sku:'SAB-1',buy:1800,sell:2300,st:0,min:6}]}],
+mov:[{d:'2026-11-07',p:'Sukari 1kg',t:'sale',q:-4,r:'INV-0141',u:'Cashier'},{d:'2026-11-07',p:'Pepsi 500ml',t:'sale',q:-12,r:'INV-0142',u:'Cashier'},{d:'2026-11-06',p:'Maji 1.5L',t:'purchase',q:24,r:'PUR-0031',u:'Owner'},{d:'2026-11-05',p:'Sabuni ya unga',t:'adjust',q:-2,r:'ADJ-0007',u:'Owner'}],
+tab:'stock',pf:null,pe:{},q:'',cq:'',fc:'',fs:'all',cf:null,open:{1:true},ae:{},ce:''});
+const stt=v=>v.st<=0?'out':v.st<=v.min?'low':'ok',nv0=()=>({l:'',bc:'',sku:'',buy:'',sell:'',st:'',min:''});
+const catPath=id=>{const c=S.cats.find(x=>x.id==id);return c?(c.p?catPath(c.p)+' › ':'')+c.n:''};
+const sub=id=>[+id,...S.cats.filter(c=>c.p==id).flatMap(c=>sub(c.id))];
+const chipS=v=>{const s=stt(v);return `<span class="chip${s==='ok'?'':s==='low'?' p':' e'}">${t('p_'+s)}</span>`};
+const allRows=()=>S.prods.filter(p=>!p.a).flatMap(p=>p.vs.map(v=>({p,v})));
+const bc=c=>{if(!c)return '';let x=2,r='';for(const ch of String(c)){const d=ch.charCodeAt(0)%4+1;r+=`<rect x="${x}" width="${d>2?2:1}" height="22"/>`;x+=d+1}return `<svg viewBox="0 0 ${x+2} 22" height="22" width="${Math.min(x*1.4,110)}" role="img" aria-label="barcode ${c}" style="fill:var(--tx)">${r}</svg>`};
+function toast(m){let e=$('#tst');if(!e){e=document.createElement('div');e.id='tst';e.setAttribute('role','status');document.body.appendChild(e)}e.textContent=m;e.className='on';clearTimeout(toast.t);toast.t=setTimeout(()=>e.className='',2600)}
+const segB=(a,list,cur)=>`<div class="seg">${list.map(([v,l])=>`<button data-a="${a}" data-v="${v}" aria-pressed="${cur===v}">${l}</button>`).join('')}</div>`;
+const stSeg=()=>segB('fs',[['all',t('p_all')],['low',t('p_low')],['out',t('p_out')]],S.fs);
+function prods(){if(S.pf)return pform();
+ const q=S.q.toLowerCase(),rows=allRows().filter(({p,v})=>(!S.fc||sub(S.fc).includes(p.cat))&&(S.fs==='all'||stt(v)===S.fs)&&(!q||(p.n+' '+v.l+' '+v.bc).toLowerCase().includes(q)));
+ return `<div class="pg"><div class="ph"><h1>${t('nav').products}</h1><span class="sp"></span><button class="btn au" data-a="padd">${t('p_add')}</button></div>
+ <div class="ph"><input id="sq" value="${esc(S.q)}" placeholder="${t('p_s')}" style="max-width:260px"><select data-sel="fc"><option value="">${t('p_allc')}</option>${S.cats.filter(c=>!c.a).map(c=>`<option value="${c.id}" ${S.fc==c.id?'selected':''}>${catPath(c.id)}</option>`).join('')}</select>${stSeg()}</div>
+ ${rows.length?`<div class="ov"><table class="tb pt"><thead><tr><th>${t('p_name')}</th><th>${t('p_cat')}</th><th>${t('p_bc')}</th><th>${t('p_buy')}</th><th>${t('p_sell')}</th><th>${t('p_stc')}</th><th></th></tr></thead><tbody>${rows.map(({p,v})=>`<tr><td>${p.img?`<img src="${p.img}" class="th" alt="">`:''}<b>${esc(p.n)}</b> ${esc(v.l)}</td><td>${esc(catPath(p.cat))}</td><td>${bc(v.bc)}<br><small style="color:var(--mu)">${esc(v.bc)}</small></td><td>${tz2(v.buy)}</td><td>${tz2(v.sell)}</td><td>${v.st} ${chipS(v)} ${rsB(v)}</td><td>${v===p.vs[0]?`<button class="lnk" data-a="pedit" data-v="${p.id}">${t('p_edt')}</button> ${S.cf==='p'+p.id?`<button class="lnk" data-a="pconf" data-v="${p.id}">${t('p_conf')}</button>`:`<button class="lnk" data-a="parch" data-v="${p.id}">${t('p_arch')}</button>`}`:''}</td></tr>`).join('')}</tbody></table></div>`:`<p class="sub">${t('p_none')}</p>`}</div>`}
+function pform(){const f=S.pf,e=S.pe||{},ed=!!f.id;
+ const I=(k,l,v,ty='text',x='')=>`<label class="f${e[k]?' bad':''}"><span>${l}</span><input data-k="${k}" type="${ty}" value="${esc(v)}" ${x}>${e[k]?`<em>${e[k]}</em>`:''}</label>`;
+ return `<div class="pg" style="max-width:720px"><h1>${ed?t('p_edit'):t('p_add')}</h1>${I('n',t('p_name'),f.n)}${photoBlock()}
+ <div class="row"><label class="f${e.cat?' bad':''}"><span>${t('p_cat')}</span><select data-k="cat"><option value="">${t('pick')}</option>${S.cats.filter(c=>!c.a).map(c=>`<option value="${c.id}" ${f.cat==c.id?'selected':''}>${esc(catPath(c.id))}</option>`).join('')}</select>${e.cat?`<em>${e.cat}</em>`:''}</label>${I('br',t('p_brand'),f.br)}${I('un',t('p_unit'),f.un)}</div>
+ ${f.vs.map((v,i)=>`<div class="vb"><div class="row">${I(`vs.${i}.l`,t('p_var'),v.l)}<div>${I(`vs.${i}.bc`,t('p_bc'),v.bc,'text','inputmode="numeric"')}<button type="button" class="lnk" data-a="scanf" data-v="${i}" style="margin-top:-10px">📷 ${t('sc_btn')}</button></div>${I(`vs.${i}.sku`,t('p_sku'),v.sku)}</div><div class="row">${I(`vs.${i}.buy`,t('p_buy'),v.buy,'number','min="0"')}${I(`vs.${i}.sell`,t('p_sell'),v.sell,'number','min="0"')}${I(`vs.${i}.st`,v.id?t('p_stc'):t('p_st'),v.st,'number',v.id?'disabled':'min="0"')}${I(`vs.${i}.min`,t('p_min'),v.min,'number','min="0"')}</div>${f.vs.length>1?`<button class="lnk" data-a="delv" data-v="${i}">${t('p_del')}</button>`:''}</div>`).join('')}
+ <button class="lnk" data-a="addv">${t('p_addv')}</button><p class="note">${t('p_note')} ${t('p_bcn')}</p>
+ <div class="nav"><button class="btn ghost" data-a="pcancel">${t('p_cancel')}</button><button class="btn" data-a="psave" ${S.busy?'disabled':''}>${S.busy?t('wait'):t('p_save')}</button></div></div>`}
+async function psave(){const f=S.pf,e={},seen=new Set(),oth=S.prods.filter(p=>p.id!==f.id).flatMap(p=>p.vs.map(v=>v.bc));
+ if(!f.n.trim())e.n=t('req');if(!f.cat)e.cat=t('req');
+ f.vs.forEach((v,i)=>{if(f.vs.length>1&&!v.l.trim())e[`vs.${i}.l`]=t('req');if(!(+v.sell>0))e[`vs.${i}.sell`]=t('p_pos');if(v.bc){if(seen.has(v.bc)||oth.includes(v.bc))e[`vs.${i}.bc`]=t('p_dup');seen.add(v.bc)}});
+ S.pe=e;if(Object.keys(e).length)return render();
+ S.busy=true;render();await mock(600);S.busy=false;
+ const un=S.d.name||'Owner',d=new Date().toISOString().slice(0,10);
+ const vs=f.vs.map((v,i)=>{const x={id:v.id||Date.now()+i,l:v.l.trim(),bc:v.bc,sku:v.sku,buy:+v.buy||0,sell:+v.sell,st:v.id?v.st:(+v.st||0),min:+v.min||0};
+  if(!v.id&&x.st>0)S.mov.unshift({d,p:(f.n+' '+x.l).trim(),t:'opening',q:x.st,r:'OPEN',u:un});return x});
+ const rec={id:f.id||Date.now(),n:f.n.trim(),cat:+f.cat,br:f.br,un:f.un,img:f.img||'',vs};
+ if(f.id)S.prods=S.prods.map(p=>p.id===f.id?rec:p);else S.prods.push(rec);
+ S.pf=null;toast(t('p_saved'));render()}
+const cnt=c=>sub(c.id).reduce((a,i)=>a+S.prods.filter(p=>!p.a&&p.cat===i).length,0);
+function cats(){const q=S.cq.toLowerCase();
+ const row=(c,d,flat)=>{const kids=S.cats.some(x=>x.p===c.id&&!x.a);return `<div class="cr" style="padding-left:${d*22}px">${!flat&&kids?`<button class="lnk" data-a="tg" data-v="${c.id}" aria-label="toggle">${S.open[c.id]?'▾':'▸'}</button>`:'<span style="width:22px"></span>'}<b>${esc(flat?catPath(c.id):c.n)}</b><small>${cnt(c)} ${t('c_pc')}</small><span class="sp"></span>${S.cf==='c'+c.id?`<button class="lnk" data-a="carch" data-v="${c.id}">${t('p_conf')}</button>`:`<button class="lnk" data-a="carchq" data-v="${c.id}">${t('p_arch')}</button>`}</div>`};
+ const tr=(pid,d)=>S.cats.filter(c=>c.p===pid&&!c.a).map(c=>row(c,d)+(S.open[c.id]?tr(c.id,d+1):'')).join('');
+ const list=q?S.cats.filter(c=>!c.a&&c.n.toLowerCase().includes(q)).map(c=>row(c,0,1)).join(''):tr(0,0);
+ return `<div class="pg" style="max-width:720px"><h1>${t('nav').categories}</h1><div class="pn"><h3>${t('c_add')}</h3><div class="row"><label class="f${S.ce?' bad':''}"><span>${t('c_name')}</span><input name="cn" value="${esc(S.d.cn)}">${S.ce?`<em>${S.ce}</em>`:''}</label><label class="f"><span>${t('c_par')}</span><select name="cp"><option value="0">${t('c_top')}</option>${S.cats.filter(c=>!c.a).map(c=>`<option value="${c.id}" ${S.d.cp==c.id?'selected':''}>${esc(catPath(c.id))}</option>`).join('')}</select></label></div><button class="btn au" data-a="cadd">${t('c_add')}</button></div>
+ <input id="cq" value="${esc(S.cq)}" placeholder="${t('c_s')}" style="margin-bottom:8px">${list||`<p class="sub">${t('p_none')}</p>`}</div>`}
+async function cadd(){const n=(S.d.cn||'').trim(),p=+(S.d.cp||0);S.ce='';
+ if(!n)S.ce=t('req');else if(S.cats.some(c=>!c.a&&c.p===p&&c.n.toLowerCase()===n.toLowerCase()))S.ce=t('p_dup');
+ if(S.ce)return render();await mock(500);const id=Date.now();S.cats.push({id,n,p});if(p)S.open[p]=true;S.d.cn='';toast(t('p_saved'));render()}
+function inv(){const T3=[['stock',t('i_cur')],['mov',t('i_mov')],['adj',t('i_adj')]],rows=allRows();let b='';
+ if(S.tab==='stock'){const fr=rows.filter(({v})=>S.fs==='all'||stt(v)===S.fs),cost=rows.reduce((a,{v})=>a+v.st*v.buy,0),ret=rows.reduce((a,{v})=>a+v.st*v.sell,0);
+  b=`<div class="kp"><div><small>${t('i_cost')}</small><b>${tz2(cost)}</b></div><div><small>${t('i_ret')}</small><b>${tz2(ret)}</b></div></div><div class="ph">${stSeg()}</div><div class="ov"><table class="tb pt"><thead><tr><th>${t('p_name')}</th><th>${t('p_stc')}</th><th>${t('p_min')}</th><th></th></tr></thead><tbody>${fr.map(({p,v})=>`<tr><td><b>${esc(p.n)}</b> ${esc(v.l)}</td><td>${v.st}</td><td>${v.min}</td><td>${chipS(v)} ${rsB(v)}</td></tr>`).join('')}</tbody></table></div>`}
+ if(S.tab==='mov')b=`<div class="ov"><table class="tb pt"><thead><tr><th>${t('i_date')}</th><th>${t('p_name')}</th><th>${t('store')}</th><th>${t('i_type')}</th><th>${t('i_qty')}</th><th>${t('i_ref')}</th><th>${t('i_user')}</th></tr></thead><tbody>${S.mov.map(m=>`<tr><td>${m.d}</td><td>${esc(m.p)}</td><td>${esc(stn('s1'))}</td><td>${t('m_'+m.t)}</td><td style="color:var(--${m.q<0?'er':'ok'})"><b>${m.q>0?'+':''}${m.q}</b></td><td>${m.r}</td><td>${esc(m.u)}</td></tr>`).join('')}</tbody></table></div>`;
+ if(S.tab==='adj'){const e=S.ae;b=`<div style="max-width:480px"><label class="f${e.av?' bad':''}"><span>${t('p_name')}</span><select name="av"><option value="">${t('pick')}</option>${rows.map(({p,v})=>`<option value="${v.id}" ${S.d.av==v.id?'selected':''}>${esc((p.n+' '+v.l).trim())} (${v.st})</option>`).join('')}</select>${e.av?`<em>${e.av}</em>`:''}</label>
+  <label class="f${e.aq?' bad':''}"><span>${t('i_aq')}</span><input name="aq" type="number" value="${esc(S.d.aq)}">${e.aq?`<em>${e.aq}</em>`:''}</label>
+  <label class="f${e.ar?' bad':''}"><span>${t('i_reason')}</span><select name="ar"><option value="">${t('pick')}</option>${['damaged','counted','found','other'].map(r=>`<option value="${r}" ${S.d.ar===r?'selected':''}>${t('r_'+r)}</option>`).join('')}</select>${e.ar?`<em>${e.ar}</em>`:''}</label>
+  <label class="f"><span>${t('i_note')}</span><input name="an" value="${esc(S.d.an)}"></label><button class="btn au" data-a="asave" ${S.busy?'disabled':''}>${S.busy?t('wait'):t('i_rec')}</button><p class="note">${t('p_note')} ${t('i_later')}</p></div>`}
+ return `<div class="pg"><div class="ph"><h1>${t('nav').inventory}</h1><span class="sp"></span>${segB('tab',T3,S.tab)}</div>${b}</div>`}
+async function asave(){const e={},v=allRows().find(r=>r.v.id==S.d.av)?.v,q=parseInt(S.d.aq,10);
+ if(!v)e.av=t('req');if(!q)e.aq=t('i_nz');else if(v&&v.st+q<0)e.aq=t('i_neg');if(!S.d.ar)e.ar=t('req');
+ S.ae=e;if(Object.keys(e).length)return render();S.busy=true;render();await mock(600);S.busy=false;
+ const r=allRows().find(x=>x.v===v);v.st+=q;S.mov.unshift({d:new Date().toISOString().slice(0,10),p:(r.p.n+' '+v.l).trim(),t:'adjust',q,r:'ADJ-'+String(S.mov.length+8).padStart(4,'0'),u:S.d.name||'Owner'});
+ S.d.aq='';S.d.an='';S.d.av='';S.d.ar='';toast(t('p_saved'));render()}
+const PG={products:prods,categories:cats,inventory:inv};
+document.addEventListener('input',e=>{const k=e.target.dataset.k;
+ if(k&&S.pf){const [a,b,c]=k.split('.');if(c!==undefined)S.pf[a][b][c]=e.target.value;else S.pf[a]=e.target.value}
+ const id=e.target.id;if(id==='sq'||id==='cq'){S[id==='sq'?'q':'cq']=e.target.value;const p=e.target.selectionStart;render();const n=$('#'+id);n.focus();n.setSelectionRange(p,p)}});
+document.addEventListener('change',e=>{if(e.target.dataset.sel==='fc'){S.fc=e.target.value;render()}});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;const a=b.dataset.a,v=b.dataset.v;
+ if(a==='padd'){S.pf={n:'',cat:'',br:'',un:'pc',vs:[nv0()]};S.pe={};render()}
+ else if(a==='pedit'){S.pf=JSON.parse(JSON.stringify(S.prods.find(x=>x.id==v)));S.pe={};render()}
+ else if(a==='pcancel'){S.pf=null;render()}else if(a==='addv'){S.pf.vs.push(nv0());render()}else if(a==='delv'){S.pf.vs.splice(+v,1);render()}
+ else if(a==='psave')psave();else if(a==='fs'){S.fs=v;render()}else if(a==='tab'){S.tab=v;render()}
+ else if(a==='parch'){S.cf='p'+v;render()}
+ else if(a==='pconf'){mock(500).then(()=>{S.prods.find(p=>p.id==v).a=true;S.cf=null;toast(t('p_saved'));render()})}
+ else if(a==='tg'){S.open[v]=!S.open[v];render()}else if(a==='cadd')cadd();else if(a==='carchq'){S.cf='c'+v;render()}
+ else if(a==='carch'){const c=S.cats.find(x=>x.id==v);if(cnt(c)){S.cf=null;toast(t('c_has'));render()}else mock(500).then(()=>{c.a=true;S.cf=null;toast(t('p_saved'));render()})}
+ else if(a==='asave')asave()});
+</script>
+<script>
+const L2={x_scan:["Changanua au andika barcode","Scan or type barcode"],x_srch:["Tafuta bidhaa","Search product"],x_cart:["Kikapu","Cart"],x_empty:["Kikapu ni tupu. Chagua bidhaa au changanua barcode.","The cart is empty. Pick a product or scan a barcode."],
+x_sub:["Jumla ndogo","Subtotal"],x_disc:["Punguzo","Discount"],x_tot:["Jumla","Total"],x_cust:["Mteja","Customer"],x_pay:["Malipo","Payment"],x_cash:["Fedha taslimu","Cash"],x_mm:["Pesa ya simu","Mobile money"],x_bank:["Benki","Bank transfer"],x_credit:["Mkopo (deni)","Credit"],
+x_addp:["+ Gawanya malipo","+ Split payment"],x_amt:["Kiasi (acha wazi = salio)","Amount (blank = remainder)"],x_complete:["Kamilisha Mauzo","Complete Sale"],x_short:["Malipo hayalingani na jumla","Payments do not match the total"],x_needc:["Chagua mteja kwa mauzo ya mkopo","Select a customer for credit sales"],
+x_stock:["Stoo haitoshi","Not enough stock"],x_unk:["Barcode haijulikani:","Unknown barcode:"],x_reg:["Sajili bidhaa","Register product"],x_cu:["Bidhaa isiyosajiliwa","Unregistered item"],x_item:["Jina la bidhaa","Item name"],x_price:["Bei","Price"],x_add:["Ongeza","Add"],
+x_rcp:["Risiti","Receipt"],x_print:["Chapisha","Print"],x_share:["Shiriki","Share"],x_new:["Mauzo mapya","New sale"],x_wait:["Inasubiri uthibitisho wa malipo ya simu…","Waiting for mobile money confirmation…"],x_done:["Mauzo yamekamilika","Sale completed"],
+x_nosh:["Kifaa hiki hakiungi kushiriki","Sharing is not supported on this device"],x_paid:["Zilizopokelewa","Received"],x_due:["Deni lililobaki","Outstanding"],x_rev:["Mauzo (thamani)","Sales revenue"],x_mmn:["Onyesho: uthibitisho wa simu ni wa kuigiza.","Preview: the mobile money confirmation is simulated."],x_cart2:["Angalia kikapu","View cart"],
+q_title:["Mauzo ya Haraka","Quick Sales"],q_desc:["Maelezo","Description"],q_deflt:["Mauzo ya leo","Today’s sales"],q_amt:["Kiasi cha mauzo","Sales amount"],q_lines:["Vipengele (si lazima)","Line items (optional)"],q_addl:["+ Ongeza kipengele","+ Add line"],q_recv:["Pesa iliyopokelewa (acha wazi = yote)","Amount received (blank = all)"],q_rec:["Rekodi mauzo","Record sale"],q_over:["Pesa iliyopokelewa ni zaidi ya mauzo","Received is more than the sale"],q_nz:["Weka kiasi kikubwa kuliko 0","Enter an amount above 0"],q_n:["Hakuna mabadiliko ya stoo kwenye Mauzo ya Haraka.","Quick Sales never change stock."],
+s_no:["Namba","No."],s_type:["Aina","Type"],s_pos:["POS","POS"],s_quick:["Haraka","Quick"],s_paid:["Imelipwa","Paid"],s_part:["Sehemu","Partly paid"],s_unpaid:["Bado","Unpaid"],s_none:["Hakuna mauzo bado.","No sales yet."]};
+for(const k in L2){T.sw[k]=L2[k][0];T.en[k]=L2[k][1]}
+Object.assign(S,{cart:[],pay:[{m:'cash',a:''}],pq:'',pcat:'',unk:'',perr:'',wait:false,rc:null,sn:149,custs:['Mama Neema','Duka la Juma','Bi Zawadi'],qe:{},
+qk:{d:'',amt:'',m:'cash',cu:'',recv:'',ls:[]},
+sales:[{no:'INV-0148',d:'2026-11-08',type:'pos',cust:'',tot:18500,paid:18500,due:0,m:['cash']},{no:'INV-0147',d:'2026-11-08',type:'pos',cust:'Mama Neema',tot:42000,paid:0,due:42000,m:['credit']},{no:'INV-0146',d:'2026-11-07',type:'pos',cust:'',tot:7500,paid:7500,due:0,m:['mm']}]});
+const tot=()=>{const sub=S.cart.reduce((a,l)=>a+l.price*l.q,0),dis=S.cart.reduce((a,l)=>a+Math.min(+l.disc||0,l.price*l.q),0);return{sub,dis,total:sub-dis}};
+const effPay=total=>{const fx=S.pay.reduce((a,p)=>a+(p.a===''?0:+p.a),0);let used=false;return S.pay.map(p=>{if(p.a===''&&!used){used=true;return{...p,e:Math.max(total-fx,0)}}return{...p,e:p.a===''?0:+p.a}})};
+const meths=['cash','mm','bank','credit'],mopt=cur=>meths.map(m=>`<option value="${m}" ${cur===m?'selected':''}>${t('x_'+m)}</option>`).join('');
+const stat=s=>s.void?'void':s.due<=0?'paid':s.paid>0?'part':'unpaid';
+const custOpt=v=>`<option value="">${t('walk')}</option>${S.custs.map(c=>`<option ${v===c?'selected':''}>${esc(c)}</option>`).join('')}`;
+function addCart(vid){const r=allRows().find(x=>x.v.id==vid);if(!r)return;const l=S.cart.find(x=>x.vid==vid);
+ if((l?l.q:0)+1>r.v.st){toast(t('x_stock'));return}
+ if(l)l.q++;else S.cart.push({vid:r.v.id,n:(r.p.n+' '+r.v.l).trim(),price:r.v.sell,q:1,disc:''});S.unk='';render()}
+function pos(){if(S.d.mode==='quick')return quick();
+ const q=S.pq.toLowerCase(),rows=allRows().filter(({p,v})=>(!S.pcat||sub(S.pcat).includes(p.cat))&&(!q||(p.n+' '+v.l+v.bc).toLowerCase().includes(q))),T=tot(),ep=effPay(T.total),n=S.cart.reduce((a,l)=>a+l.q,0);
+ const chips=[['',t('p_all')],...S.cats.filter(c=>!c.a&&!c.p).map(c=>[String(c.id),c.n])];
+ const cart=S.cart.length?S.cart.map((l,i)=>`<div class="cl"><div><b>${esc(l.n)}</b><br><small>${tz2(l.price)}</small></div><div class="qt"><button class="ic" data-a="qm" data-v="${i}" aria-label="-">−</button><b>${l.q}</b><button class="ic" data-a="qp" data-v="${i}" aria-label="+">+</button></div><div style="text-align:right"><b>${tz2(l.price*l.q-Math.min(+l.disc||0,l.price*l.q))}</b><br><input data-ld="${i}" type="number" min="0" ${can2('discount')?'':'disabled'} value="${esc(l.disc)}" placeholder="${t('x_disc')}" style="min-height:32px;width:96px;padding:2px 6px;font-size:13px"></div><button class="lnk" data-a="qd" data-v="${i}" aria-label="remove">✕</button></div>`).join(''):`<p class="sub">${t('x_empty')}</p>`;
+ return `<div class="pg pm"><div class="pos"><div><div class="ph"><h1>${t('nav').pos}</h1></div><div class="row" style="margin-bottom:10px"><div style="display:flex;gap:6px"><input id="bq" placeholder="${t('x_scan')}" autocomplete="off"><button class="btn au" data-a="scan" style="padding:0 14px;white-space:nowrap">📷 ${t('sc_btn')}</button></div><input id="pq" value="${esc(S.pq)}" placeholder="${t('x_srch')}"></div>
+ ${S.unk?`<div class="note" style="margin:0 0 10px">${t('x_unk')} <b>${esc(S.unk)}</b> <button class="lnk" data-a="xreg">${t('x_reg')}</button> <span id="cu"></span><div class="row" style="margin-top:8px"><input id="cun" placeholder="${t('x_item')}"><input id="cup" type="number" min="0" placeholder="${t('x_price')}"><button class="btn au" data-a="xcu">${t('x_cu')}: ${t('x_add')}</button></div></div>`:''}
+ <div class="seg" style="margin-bottom:12px;flex-wrap:wrap">${chips.map(([v,l])=>`<button data-a="xc" data-v="${v}" aria-pressed="${S.pcat===v}">${esc(l)}</button>`).join('')}</div>
+ <div class="tiles">${rows.map(({p,v})=>`<button class="tile" data-a="xadd" data-v="${v.id}" ${v.st<=0?'disabled':''}>${p.img?`<img src="${p.img}" class="ti" alt="">`:''}<b>${esc((p.n+' '+v.l).trim())}</b><span>${tz2(v.sell)}</span><small>${v.st} · ${chipS(v)}</small></button>`).join('')||`<p class="sub">${t('p_none')}</p>`}</div></div>
+ <aside class="cartp" id="cart"><h3 style="margin:0 0 8px">${t('x_cart')}</h3>${cart}
+ <div class="sum" style="margin-top:12px"><div><span>${t('x_sub')}</span><b>${tz2(T.sub)}</b></div><div><span>${t('x_disc')}</span><b>−${tz2(T.dis)}</b></div><div><span>${t('x_tot')}</span><b style="font-size:19px">${tz2(T.total)}</b></div></div>
+ <label class="f"><span>${t('x_cust')}</span><select name="pc">${custOpt(S.d.pc)}</select></label>
+ <span class="stl" style="display:block">${t('x_pay')}</span>${ep.map((p,i)=>`<div class="row" style="gap:8px;margin-bottom:8px"><select data-pm="${i}">${mopt(p.m)}</select><input data-pa="${i}" type="number" min="0" value="${p.a}" placeholder="${p.a===''?Math.round(p.e):t('x_amt')}">${S.pay.length>1?`<button class="lnk" data-a="pdel" data-v="${i}" style="flex:0">✕</button>`:''}</div>`).join('')}
+ <button class="lnk" data-a="padd2">${t('x_addp')}</button>${S.perr?`<p style="color:var(--er);font-size:14px;margin:6px 0">${S.perr}</p>`:''}${S.wait?`<p class="note">${t('x_wait')}</p>`:''}
+ <button class="btn" data-a="xpay" style="margin-top:8px" ${S.busy||!S.cart.length?'disabled':''}>${S.busy?t('wait'):t('x_complete')+' · '+tz2(T.total)}</button><p class="note">${t('x_mmn')}</p></aside></div>
+ ${S.cart.length?`<button class="btn cb" data-a="gocart">${t('x_cart2')} (${n}) · ${tz2(T.total)}</button>`:''}${S.rc?rcpt():''}</div>`}
+function rcpt(){const s=S.rc;return `<div class="rov"><div class="rcp"><h3 style="margin:0 0 4px">${t('x_done')}</h3><p class="ok" style="margin:0 0 10px">${s.no} · ${s.d}</p>${s.items.map(l=>`<div class="rl"><span>${l.q}× ${esc(l.n)}</span><span>${tz2(l.price*l.q-Math.min(+l.disc||0,l.price*l.q))}</span></div>`).join('')}<hr><div class="rl"><b>${t('x_tot')}</b><b>${tz2(s.tot)}</b></div><div class="rl"><span>${t('x_paid')}</span><span>${tz2(s.paid)}</span></div>${s.due?`<div class="rl"><span>${t('x_due')}</span><span>${tz2(s.due)}</span></div>`:''}<div class="rl"><span>${t('x_cust')}</span><span>${esc(s.cust||t('walk'))}</span></div>
+ <div class="ra row" style="gap:8px;margin-top:14px"><button class="btn ghost" data-a="rprint">${t('x_print')}</button><button class="btn ghost" data-a="rshare">${t('x_share')}</button><button class="btn" data-a="rnew">${t('x_new')}</button></div></div></div>`}
+async function checkout(){const T=tot(),ep=effPay(T.total);if(!S.cart.length)return;
+ const sum=ep.reduce((a,p)=>a+p.e,0),due=ep.filter(p=>p.m==='credit').reduce((a,p)=>a+p.e,0);
+ S.perr=Math.round(sum)!==Math.round(T.total)?t('x_short'):due>0&&!S.d.pc?t('x_needc'):'';if(S.perr)return render();
+ S.busy=true;render();await mock(800);
+ if(ep.some(p=>p.m==='mm'&&p.e>0)){S.wait=true;render();await mock(1500);S.wait=false}
+ S.sn++;const no='INV-'+String(S.sn).padStart(4,'0'),d=new Date().toISOString().slice(0,10),un=S.d.name||'Owner';
+ S.cart.forEach(l=>{const r=allRows().find(x=>x.v.id==l.vid);if(r){r.v.st-=l.q;S.mov.unshift({d,p:l.n,t:'sale',q:-l.q,r:no,u:un})}});
+ const s={no,d,type:'pos',cust:S.d.pc||'',tot:T.total,paid:T.total-due,p0:T.total-due,due,m:[...new Set(ep.filter(p=>p.e>0).map(p=>p.m))],items:S.cart.map(l=>({...l}))};
+ S.sales.unshift(s);S.rc=s;S.cart=[];S.pay=[{m:'cash',a:''}];S.d.pc='';S.busy=false;render()}
+function quick(){const q=S.qk,e=S.qe,ls=q.ls,total=ls.length?ls.reduce((a,l)=>a+(+l.a||0),0):+q.amt||0,recv=q.recv===''?total:+q.recv,due=Math.max(total-recv,0);
+ const F=(k,l,v,ty='text',x='')=>`<label class="f${e[k]?' bad':''}"><span>${l}</span><input data-q="${k}" type="${ty}" value="${esc(v)}" ${x}>${e[k]?`<em>${e[k]}</em>`:''}</label>`;
+ return `<div class="pg" style="max-width:640px"><h1>${t('q_title')}</h1>${F('d',t('q_desc'),q.d,'text',`placeholder="${t('q_deflt')}"`)}${F('amt',t('q_amt'),q.amt,'number',ls.length?'disabled':'min="0"')}
+ <div class="pn"><h3>${t('q_lines')}</h3>${ls.map((l,i)=>`<div class="row" style="gap:8px">${F(`ls.${i}.d`,t('q_desc'),l.d)}${F(`ls.${i}.a`,t('x_price'),l.a,'number','min="0"')}<button class="lnk" data-a="qld" data-v="${i}" style="flex:0;margin-top:20px">✕</button></div>`).join('')}<button class="lnk" data-a="qla">${t('q_addl')}</button></div>
+ <div class="row"><label class="f"><span>${t('x_pay')}</span><select data-qs="m">${meths.filter(m=>m!=='credit').map(m=>`<option value="${m}" ${q.m===m?'selected':''}>${t('x_'+m)}</option>`).join('')}</select></label><label class="f"><span>${t('x_cust')}</span><select data-qs="cu">${custOpt(q.cu)}</select></label></div>
+ ${F('recv',t('q_recv'),q.recv,'number','min="0"')}${e.cu?`<p style="color:var(--er);font-size:14px">${e.cu}</p>`:''}
+ <div class="kp"><div><small>${t('x_rev')}</small><b>${tz2(total)}</b></div><div><small>${t('x_paid')}</small><b>${tz2(Math.min(recv,total))}</b></div><div><small>${t('x_due')}</small><b>${tz2(due)}</b></div></div>
+ <button class="btn" data-a="qsave" ${S.busy?'disabled':''}>${S.busy?t('wait'):t('q_rec')}</button><p class="note">${t('q_n')}</p></div>`}
+async function qsave(){const q=S.qk,e={},total=q.ls.length?q.ls.reduce((a,l)=>a+(+l.a||0),0):+q.amt||0,recv=q.recv===''?total:+q.recv;
+ if(!(total>0))e[q.ls.length?'ls.0.a':'amt']=t('q_nz');if(recv>total)e.recv=t('q_over');if(total-recv>0&&!q.cu)e.cu=t('x_needc');
+ S.qe=e;if(Object.keys(e).length)return render();S.busy=true;render();await mock(600);S.busy=false;
+ S.sn++;S.sales.unshift({no:'QS-'+String(S.sn).padStart(4,'0'),d:new Date().toISOString().slice(0,10),type:'quick',cust:q.cu,tot:total,paid:recv,p0:recv,due:total-recv,m:[q.m],desc:q.d||t('q_deflt')});
+ S.qk={d:'',amt:'',m:q.m,cu:'',recv:'',ls:[]};toast(t('x_done'));render()}
+function sales(){return `<div class="pg"><h1>${t('nav').sales}</h1>${S.sales.length?`<div class="ov"><table class="tb pt"><thead><tr><th>${t('s_no')}</th><th>${t('i_date')}</th><th>${t('s_type')}</th><th>${t('x_cust')}</th><th>${t('x_tot')}</th><th>${t('x_paid')}</th><th>${t('x_due')}</th><th></th></tr></thead><tbody>${S.sales.map(s=>`<tr><td><b>${s.no}</b></td><td>${s.d}</td><td>${t(s.type==='pos'?'s_pos':'s_quick')} · ${s.m.map(m=>t('x_'+m)).join(', ')}</td><td>${esc(s.cust||t('walk'))}</td><td>${tz2(s.tot)}</td><td>${tz2(s.paid)}</td><td>${tz2(s.due)}</td><td><span class="chip${stat(s)==='paid'?'':stat(s)==='part'?' p':' e'}">${t('s_'+stat(s))}</span></td></tr>`).join('')}</tbody></table></div>`:`<p class="sub">${t('s_none')}</p>`}</div>`}
+PG.pos=pos;PG.sales=sales;
+function live(el,fn){const sel=['data-ld','data-pa','data-q'].filter(a=>el.hasAttribute(a)).map(a=>`[${a}="${el.getAttribute(a)}"]`).join('')||'#'+el.id;fn();render();const n=$(sel);if(n){n.focus();try{n.setSelectionRange(n.value.length,n.value.length)}catch(x){}}}
+document.addEventListener('input',e=>{const el=e.target;
+ if(el.id==='pq')live(el,()=>{S.pq=el.value});
+ if(el.hasAttribute('data-ld'))live(el,()=>{S.cart[+el.dataset.ld].disc=el.value});
+ if(el.hasAttribute('data-pa'))live(el,()=>{S.pay[+el.dataset.pa].a=el.value});
+ if(el.hasAttribute('data-q'))live(el,()=>{const [a,b,c]=el.dataset.q.split('.');if(c!==undefined)S.qk[a][b][c]=el.value;else S.qk[a]=el.value});});
+document.addEventListener('change',e=>{const el=e.target;
+ if(el.hasAttribute('data-pm')){S.pay[+el.dataset.pm].m=el.value;render()}
+ if(el.hasAttribute('data-qs')){S.qk[el.dataset.qs]=el.value;render()}});
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='bq'){e.preventDefault();const c=e.target.value.trim();if(!c)return;const r=allRows().find(x=>x.v.bc===c);if(r)addCart(r.v.id);else{S.unk=c;render()}}});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;const a=b.dataset.a,v=b.dataset.v;
+ if(a==='xadd')addCart(v);else if(a==='xc'){S.pcat=v;render()}
+ else if(a==='qp'){const l=S.cart[+v],r=allRows().find(x=>x.v.id==l.vid);if(r&&l.q+1>r.v.st)toast(t('x_stock'));else{l.q++;render()}}
+ else if(a==='qm'){const l=S.cart[+v];l.q--;if(l.q<=0)S.cart.splice(+v,1);render()}else if(a==='qd'){S.cart.splice(+v,1);render()}
+ else if(a==='padd2'){S.pay.push({m:'mm',a:''});render()}else if(a==='pdel'){S.pay.splice(+v,1);render()}else if(a==='xpay')checkout();
+ else if(a==='xreg'){S.pf={n:'',cat:'',br:'',un:'pc',vs:[{...nv0(),bc:S.unk}]};S.pe={};S.unk='';S.page='products';render()}
+ else if(a==='xcu'){const n=$('#cun').value.trim(),p=+$('#cup').value;if(n&&p>0){S.cart.push({vid:'c'+Date.now(),n,price:p,q:1,disc:'',custom:1});S.unk='';render()}else toast(t('req'))}
+ else if(a==='rnew'){S.rc=null;render()}else if(a==='rprint'){try{window.print()}catch(x){}}
+ else if(a==='rshare'){const s=S.rc,tx=`${s.no} · ${tz2(s.tot)}`;if(navigator.share)navigator.share({title:'ShopFlow',text:tx}).catch(()=>{});else toast(t('x_nosh'))}
+ else if(a==='gocart')$('#cart').scrollIntoView({behavior:'smooth'});
+ else if(a==='qla'){S.qk.ls.push({d:'',a:''});render()}else if(a==='qld'){S.qk.ls.splice(+v,1);render()}else if(a==='qsave')qsave()});
+</script>
+<script>
+const L3={v_add:["Ongeza msambazaji","Add supplier"],v_name:["Jina","Name"],v_ph:["Simu","Phone"],v_bal:["Salio analodai","Balance owed"],v_pay:["Lipa msambazaji","Pay supplier"],v_pays:["Malipo yaliyofanywa","Payments made"],
+u_new:["Rekodi manunuzi","Record purchase"],u_sup:["Msambazaji","Supplier"],u_prod:["Bidhaa","Product"],u_unit:["Kipimo cha kununua","Buying unit"],u_base:["Kipande kimoja","Single unit"],u_pack:["Pakiti / katoni","Pack / carton"],u_pk:["Vipande kwa pakiti","Units per pack"],
+u_q:["Idadi","Quantity"],u_cost:["Bei kwa kipimo","Cost per unit"],u_addl:["+ Ongeza bidhaa","+ Add product"],u_paid:["Kiasi kilicholipwa (acha wazi = yote)","Amount paid (blank = all)"],u_conv:["= vipande","= units"],u_no:["Namba","No."],u_tot:["Jumla","Total"],u_none:["Hakuna manunuzi bado.","No purchases yet."],u_over:["Kiasi kinazidi jumla","More than the total"],
+c_add2:["Ongeza mteja","Add customer"],c_ph:["Simu","Phone"],c_srch:["Tafuta kwa jina au simu","Search by name or phone"],c_bal:["Deni","Balance"],c_rec:["Pokea malipo","Receive payment"],c_hist:["Historia ya miamala","Transaction history"],c_pays:["Malipo yaliyopokelewa","Payments received"],c_big:["Kiasi kinazidi deni","More than the balance"],c_none:["Hakuna deni","No debt"],c_pr:["Malipo yamerekodiwa","Payment recorded"],
+d_title:["Umri wa madeni","Debt aging"],d_a:["Siku 0–7","0–7 days"],d_b:["Siku 8–30","8–30 days"],d_c:["Zaidi ya siku 30","Over 30 days"],d_view:["Fungua","Open"],d_empty:["Hakuna madeni. Kazi nzuri!","No outstanding debts."],
+n_s:["Tafuta namba ya ankara","Search invoice number"],n_from:["Kuanzia","From"],n_to:["Hadi","To"],n_open:["Fungua","Open"],n_rcp:["Risiti","Receipt"],n_void:["Batilisha ankara","Void invoice"],n_reason:["Sababu ya kubatilisha","Reason for voiding"],n_vd:["Ankara imebatilishwa","Invoice voided"],n_close:["Funga","Close"],n_note:["Ankara iliyokamilika haihaririwi. Tumia kubatilisha na sababu.","Completed invoices are never edited. Use void with a reason."],
+s_void:["Imebatilishwa","Voided"],m_return:["Imerudishwa","Returned"],ret:["Rudi","Back"]};
+for(const k in L3){T.sw[k]=L3[k][0];T.en[k]=L3[k][1]}
+Object.assign(S,{sup:[{n:'Kariakoo Wholesale',ph:'0765 000 222'},{n:'Bakhresa Distributors',ph:'0712 000 111'}],
+pur:[{no:'PUR-0031',d:'2026-11-06',sup:'Kariakoo Wholesale',lines:[{n:'Maji 1.5L',q:24,cost:700}],total:16800,paid:10000}],spay:[],
+cinfo:{'Mama Neema':{ph:'0713 111 222'},'Duka la Juma':{ph:'0754 333 444'},'Bi Zawadi':{ph:'0622 555 666'}},cpay:[],cv:'',sv:'',pu:null,pe2:{},sf:false,iv:'',cuq:'',iq:'',pd:'',se:'',ce2:'',cf2:false});
+S.sales.push({no:'INV-0120',d:'2026-10-02',type:'pos',cust:'Duka la Juma',tot:80000,paid:30000,due:50000,m:['cash','credit'],items:[{n:'Sukari 1kg',vid:21,q:20,price:3500,disc:0},{n:'Pepsi 500ml',vid:12,q:10,price:1000,disc:0}]},{no:'INV-0131',d:'2026-10-20',type:'pos',cust:'Bi Zawadi',tot:25000,paid:0,due:25000,m:['credit'],items:[{n:'Sabuni ya unga',vid:51,q:10,price:2500,disc:0}]});
+const nowD=()=>new Date().toISOString().slice(0,10),age=d=>Math.floor((Date.now()-new Date(d).getTime())/864e5);
+const custBal=n=>S.sales.filter(s=>!s.void&&s.cust===n).reduce((a,s)=>a+s.due,0);
+const supBal=n=>S.pur.filter(p=>p.sup===n).reduce((a,p)=>a+p.total-p.paid,0)-S.spay.filter(p=>p.sup===n).reduce((a,p)=>a+p.a,0);
+const bk=n=>{const b=[0,0,0];S.sales.filter(s=>!s.void&&s.cust===n&&s.due>0).forEach(s=>{const a=age(s.d);b[a<=7?0:a<=30?1:2]+=s.due});return b};
+const H=(c,r)=>`<div class="ov"><table class="tb pt"><thead><tr>${c.map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody>${r}</tbody></table></div>`;
+const m3=c=>['cash','mm','bank'].map(m=>`<option value="${m}" ${c===m?'selected':''}>${t('x_'+m)}</option>`).join('');
+const bkBtn=()=>`<button class="lnk" data-a="back2">‹ ${t('ret')}</button>`;
+const FF=(n,l,v,ty='text',err='')=>`<label class="f${err?' bad':''}"><span>${l}</span><input name="${n}" type="${ty}" value="${esc(v)}">${err?`<em>${err}</em>`:''}</label>`;
+function sups(){if(S.sv)return supDet();
+ return `<div class="pg"><div class="ph"><h1>${t('nav').suppliers}</h1><span class="sp"></span><button class="btn au" data-a="sfadd">+ ${t('v_add')}</button></div>${S.sf?`<div class="pn"><div class="row">${FF('sn',t('v_name'),S.d.sn,'text',S.se)}${FF('sph',t('v_ph'),S.d.sph,'tel')}</div><button class="btn au" data-a="ssave">${t('p_save')}</button></div>`:''}
+ ${H([t('v_name'),t('v_ph'),t('v_bal')],S.sup.map(s=>`<tr><td><button class="lnk" data-a="sopen" data-v="${esc(s.n)}">${esc(s.n)}</button></td><td>${esc(s.ph)}</td><td>${tz2(supBal(s.n))}</td></tr>`).join(''))}</div>`}
+function supDet(){const n=S.sv,b=supBal(n);return `<div class="pg">${bkBtn()}<h1>${esc(n)}</h1><div class="kp"><div><small>${t('v_bal')}</small><b>${tz2(b)}</b></div></div>
+ <div class="pn"><h3>${t('v_pay')}</h3><div class="row">${FF('spa',t('x_amt').split(' (')[0],S.d.spa,'number',S.se)}<label class="f"><span>${t('x_pay')}</span><select name="spm">${m3(S.d.spm)}</select></label>${FF('spr',t('i_ref'),S.d.spr)}</div><button class="btn au" data-a="spay" ${S.busy?'disabled':''}>${S.busy?t('wait'):t('p_save')}</button></div>
+ <div class="pn"><h3>${t('nav').purchases}</h3>${H([t('u_no'),t('i_date'),t('u_tot'),t('x_paid')],S.pur.filter(p=>p.sup===n).map(p=>`<tr><td>${p.no}</td><td>${p.d}</td><td>${tz2(p.total)}</td><td>${tz2(p.paid)}</td></tr>`).join(''))}</div>
+ <div class="pn"><h3>${t('v_pays')}</h3>${H([t('i_date'),t('x_amt').split(' (')[0],t('x_pay'),t('i_ref')],S.spay.filter(p=>p.sup===n).map(p=>`<tr><td>${p.d}</td><td>${tz2(p.a)}</td><td>${t('x_'+p.m)}</td><td>${esc(p.r)}</td></tr>`).join(''))}</div></div>`}
+async function spay(){const n=S.sv,a=+S.d.spa;S.se=!(a>0)?t('q_nz'):a>supBal(n)?t('c_big'):'';if(S.se)return render();S.busy=true;render();await mock(600);S.busy=false;S.spay.unshift({d:nowD(),sup:n,a,m:S.d.spm||'cash',r:S.d.spr||''});S.d.spa='';S.d.spr='';toast(t('p_saved'));render()}
+const nl=()=>({vid:'',unit:'base',pk:'24',q:'',cost:''});
+const lq=l=>l.unit==='pack'?(+l.q||0)*(+l.pk||0):+l.q||0,lt2=l=>(+l.q||0)*(+l.cost||0);
+function purs(){if(S.pu)return puForm();
+ return `<div class="pg"><div class="ph"><h1>${t('nav').purchases}</h1><span class="sp"></span><button class="btn au" data-a="pnew">+ ${t('u_new')}</button></div>${S.pur.length?H([t('u_no'),t('i_date'),t('u_sup'),t('u_tot'),t('x_paid'),t('x_due')],S.pur.map(p=>`<tr><td><button class="lnk" data-a="pdet" data-v="${p.no}">${p.no}</button></td><td>${p.d}</td><td>${esc(p.sup)}</td><td>${tz2(p.total)}</td><td>${tz2(p.paid)}</td><td>${tz2(p.total-p.paid)}</td></tr>${S.pd===p.no?`<tr><td colspan="6" style="color:var(--mu)">${p.lines.map(l=>`${esc(l.n)}: ${l.q} × ${tz2(l.cost)}`).join(' · ')}</td></tr>`:''}`).join('')):`<p class="sub">${t('u_none')}</p>`}</div>`}
+function puForm(){const f=S.pu,e=S.pe2,rows=allRows(),T0=f.l.reduce((a,l)=>a+lt2(l),0);
+ return `<div class="pg" style="max-width:760px"><h1>${t('u_new')}</h1><label class="f${e.sup?' bad':''}"><span>${t('u_sup')}</span><select data-u="sup"><option value="">${t('pick')}</option>${S.sup.map(s=>`<option ${f.sup===s.n?'selected':''}>${esc(s.n)}</option>`).join('')}</select>${e.sup?`<em>${e.sup}</em>`:''}</label>
+ ${f.l.map((l,i)=>{const r=rows.find(x=>x.v.id==l.vid),un=r?(r.p.un||''):'';return `<div class="vb"><div class="row"><label class="f${e['v'+i]?' bad':''}"><span>${t('u_prod')}</span><select data-u="l.${i}.vid"><option value="">${t('pick')}</option>${rows.map(({p,v})=>`<option value="${v.id}" ${l.vid==v.id?'selected':''}>${esc((p.n+' '+v.l).trim())}</option>`).join('')}</select></label><label class="f"><span>${t('u_unit')}</span><select data-u="l.${i}.unit"><option value="base" ${l.unit==='base'?'selected':''}>${t('u_base')}</option><option value="pack" ${l.unit==='pack'?'selected':''}>${t('u_pack')}</option></select></label></div>
+ <div class="row">${l.unit==='pack'?FF2(`l.${i}.pk`,t('u_pk'),l.pk,e['k'+i]):''}${FF2(`l.${i}.q`,t('u_q'),l.q,e['q'+i])}${FF2(`l.${i}.cost`,t('u_cost'),l.cost,e['c'+i])}</div>${l.unit==='pack'&&+l.q>0?`<small style="color:var(--mu)">${l.q} × ${l.pk} ${t('u_conv')} ${lq(l)} ${esc(un)}</small>`:''}${f.l.length>1?`<br><button class="lnk" data-a="pldel" data-v="${i}">✕</button>`:''}</div>`}).join('')}
+ <button class="lnk" data-a="pladd">${t('u_addl')}</button><div class="kp"><div><small>${t('u_tot')}</small><b>${tz2(T0)}</b></div></div>
+ <div class="row">${FF2('paid',t('u_paid'),f.paid,e.paid)}<label class="f"><span>${t('x_pay')}</span><select data-u="m">${m3(f.m)}</select></label>${FF2('ref',t('i_ref'),f.ref)}</div>
+ <div class="nav"><button class="btn ghost" data-a="back2">${t('p_cancel')}</button><button class="btn" data-a="psave2" ${S.busy?'disabled':''}>${S.busy?t('wait'):t('p_save')}</button></div></div>`}
+const FF2=(k,l,v,err='')=>`<label class="f${err?' bad':''}"><span>${l}</span><input data-u="${k}" type="${k==='ref'?'text':'number'}" min="0" value="${esc(v)}">${err?`<em>${err}</em>`:''}</label>`;
+async function psave2(){const f=S.pu,e={},T0=f.l.reduce((a,l)=>a+lt2(l),0),paid=f.paid===''?T0:+f.paid,rows=allRows();
+ if(!f.sup)e.sup=t('req');f.l.forEach((l,i)=>{if(!rows.find(x=>x.v.id==l.vid))e['v'+i]=t('req');if(!(+l.q>0))e['q'+i]=t('p_pos');if(!(+l.cost>0))e['c'+i]=t('p_pos');if(l.unit==='pack'&&!(+l.pk>0))e['k'+i]=t('p_pos')});
+ if(paid>T0)e.paid=t('u_over');S.pe2=e;if(Object.keys(e).length)return render();
+ S.busy=true;render();await mock(700);S.busy=false;const no='PUR-'+String(32+S.pur.length-1).padStart(4,'0'),d=nowD();
+ const lines=f.l.map(l=>{const r=rows.find(x=>x.v.id==l.vid),b=lq(l);r.v.st+=b;S.mov.unshift({d,p:(r.p.n+' '+r.v.l).trim(),t:'purchase',q:b,r:no,u:S.d.name||'Owner'});return{n:(r.p.n+' '+r.v.l).trim(),q:b,cost:l.unit==='pack'?(+l.cost)/(+l.pk):+l.cost}});
+ S.pur.unshift({no,d,sup:f.sup,lines,total:T0,paid});S.pu=null;toast(t('p_saved'));render()}
+function custs(){if(S.cv)return custDet();const q=S.cuq.toLowerCase(),list=S.custs.filter(n=>!q||(n+' '+(S.cinfo[n]?.ph||'')).toLowerCase().includes(q));
+ return `<div class="pg"><div class="ph"><h1>${t('nav').customers}</h1><span class="sp"></span><button class="btn au" data-a="cfadd">+ ${t('c_add2')}</button></div>${S.cf2?`<div class="pn"><div class="row">${FF('cn',t('v_name'),S.d.cn,'text',S.ce2)}${FF('cph',t('c_ph'),S.d.cph,'tel')}</div><button class="btn au" data-a="csave">${t('p_save')}</button></div>`:''}
+ <input id="cuq" value="${esc(S.cuq)}" placeholder="${t('c_srch')}" style="max-width:300px;margin-bottom:10px">${H([t('v_name'),t('c_ph'),t('c_bal')],list.map(n=>{const b=custBal(n);return `<tr><td><button class="lnk" data-a="copen" data-v="${esc(n)}">${esc(n)}</button></td><td>${esc(S.cinfo[n]?.ph||'')}</td><td>${b?`<span class="chip e">${tz2(b)}</span>`:t('c_none')}</td></tr>`}).join(''))}</div>`}
+function custDet(){const n=S.cv,b=custBal(n),a=bk(n);return `<div class="pg">${bkBtn()}<h1>${esc(n)}</h1><p class="sub">${esc(S.cinfo[n]?.ph||'')}</p><div class="kp"><div><small>${t('c_bal')}</small><b>${tz2(b)}</b></div><div><small>${t('d_a')}</small><b>${tz2(a[0])}</b></div><div><small>${t('d_b')}</small><b>${tz2(a[1])}</b></div><div><small>${t('d_c')}</small><b>${tz2(a[2])}</b></div></div>
+ ${b?`<div class="pn"><h3>${t('c_rec')}</h3><div class="row">${FF('cpa',t('x_amt').split(' (')[0],S.d.cpa,'number',S.ce2)}<label class="f"><span>${t('x_pay')}</span><select name="cpm">${m3(S.d.cpm)}</select></label></div><button class="btn au" data-a="cpay" ${S.busy?'disabled':''}>${S.busy?t('wait'):t('c_rec')}</button></div>`:''}
+ <div class="pn"><h3>${t('c_hist')}</h3>${H([t('s_no'),t('i_date'),t('x_tot'),t('x_due')],S.sales.filter(s=>s.cust===n).map(s=>`<tr><td>${s.no}</td><td>${s.d}</td><td>${tz2(s.tot)}</td><td>${s.void?t('s_void'):tz2(s.due)}</td></tr>`).join(''))}</div>
+ <div class="pn"><h3>${t('c_pays')}</h3>${H([t('i_date'),t('x_paid'),t('x_pay')],S.cpay.filter(p=>p.cust===n).map(p=>`<tr><td>${p.d}</td><td>${tz2(p.a)}</td><td>${t('x_'+p.m)}</td></tr>`).join(''))}</div></div>`}
+async function cpay(){const n=S.cv,a=+S.d.cpa;S.ce2=!(a>0)?t('q_nz'):a>custBal(n)?t('c_big'):'';if(S.ce2)return render();S.busy=true;render();await mock(600);S.busy=false;
+ let r=a;S.sales.filter(s=>!s.void&&s.cust===n&&s.due>0).sort((x,y)=>x.d<y.d?-1:1).forEach(s=>{const k=Math.min(r,s.due);s.due-=k;s.paid+=k;r-=k});
+ S.cpay.unshift({d:nowD(),cust:n,a,m:S.d.cpm||'cash'});S.d.cpa='';toast(t('c_pr'));render()}
+function debts(){const rows=S.custs.filter(n=>custBal(n)>0);return `<div class="pg"><h1>${t('nav').debts}</h1>${rows.length?H([t('x_cust'),t('d_a'),t('d_b'),t('d_c'),t('c_bal'),''],rows.map(n=>{const a=bk(n);return `<tr><td><b>${esc(n)}</b></td><td>${tz2(a[0])}</td><td>${tz2(a[1])}</td><td style="color:var(--${a[2]?'er':'mu'})">${tz2(a[2])}</td><td><b>${tz2(custBal(n))}</b></td><td><button class="lnk" data-a="copen" data-v="${esc(n)}">${t('d_view')}</button></td></tr>`}).join('')):`<p class="sub">${t('d_empty')}</p>`}</div>`}
+const norm=s=>({...s,items:s.items&&s.items.length?s.items:[{q:1,n:s.desc||'—',price:s.tot,disc:0}]});
+function invs(){if(S.iv)return invDet();const q=S.iq.toLowerCase(),f=S.d.ifr||'',to=S.d.ito||'',list=S.sales.filter(s=>(!q||s.no.toLowerCase().includes(q))&&(!f||s.d>=f)&&(!to||s.d<=to));
+ return `<div class="pg"><h1>${t('nav').invoices}</h1><div class="ph"><input id="iq" value="${esc(S.iq)}" placeholder="${t('n_s')}" style="max-width:240px"><label style="display:flex;gap:6px;align-items:center">${t('n_from')}<input type="date" data-sel="ifr" value="${f}" style="width:auto;min-height:38px"></label><label style="display:flex;gap:6px;align-items:center">${t('n_to')}<input type="date" data-sel="ito" value="${to}" style="width:auto;min-height:38px"></label></div>
+ ${list.length?H([t('s_no'),t('i_date'),t('x_cust'),t('x_tot'),t('x_due'),''],list.map(s=>`<tr><td><button class="lnk" data-a="iopen" data-v="${s.no}">${s.no}</button></td><td>${s.d}</td><td>${esc(s.cust||t('walk'))}</td><td>${tz2(s.tot)}</td><td><span class="chip${stat(s)==='paid'?'':stat(s)==='part'?' p':' e'}">${t('s_'+stat(s))}</span></td><td></td></tr>`).join('')):`<p class="sub">${t('s_none')}</p>`}${S.rc?rcpt().replace(t('x_new'),t('n_close')):''}</div>`}
+function invDet(){const s=norm(S.sales.find(x=>x.no===S.iv));return `<div class="pg" style="max-width:640px">${bkBtn()}<h1>${s.no}</h1><p class="sub">${s.d} · ${esc(s.cust||t('walk'))} · ${s.m.map(m=>t('x_'+m)).join(', ')}</p>
+ <div class="sum">${s.items.map(l=>`<div><span>${l.q}× ${esc(l.n)}</span><b>${tz2(l.price*l.q-Math.min(+l.disc||0,l.price*l.q))}</b></div>`).join('')}<div><span>${t('x_tot')}</span><b>${tz2(s.tot)}</b></div><div><span>${t('x_paid')}</span><b>${tz2(s.paid)}</b></div><div><span>${t('x_due')}</span><b>${tz2(s.due)}</b></div><div><span>${t('s_type')}</span><span class="chip${stat(s)==='paid'?'':stat(s)==='part'?' p':' e'}">${t('s_'+stat(s))}</span></div></div>
+ <div class="row" style="gap:8px"><button class="btn ghost" data-a="irc" data-v="${s.no}">${t('n_rcp')}</button><button class="btn ghost" data-a="rprint">${t('x_print')}</button><button class="btn ghost" data-a="rshare2" data-v="${s.no}">${t('x_share')}</button></div>
+ ${s.void?'':`<div class="pn" style="margin-top:20px"><h3>${t('n_void')}</h3><label class="f"><span>${t('n_reason')}</span><input name="vr" value="${esc(S.d.vr)}"></label><button class="btn ghost" data-a="ivoid" data-v="${s.no}" ${S.busy||!can2('void')?'disabled':''}>${t('n_void')}</button></div>`}<p class="note">${t('n_note')}</p>${S.rc?rcpt().replace(t('x_new'),t('n_close')):''}</div>`}
+async function ivoid(no){if(!(S.d.vr||'').trim())return toast(t('req'));S.busy=true;render();await mock(600);S.busy=false;const s=S.sales.find(x=>x.no===no);s.void=true;s.vd=nowD();s.vreason=S.d.vr;
+ (s.items||[]).forEach(l=>{const r=allRows().find(x=>x.v.id==l.vid);if(r){r.v.st+=l.q;S.mov.unshift({d:nowD(),p:l.n,t:'return',q:l.q,r:no,u:S.d.name||'Owner'})}});S.d.vr='';toast(t('n_vd'));render()}
+Object.assign(PG,{suppliers:sups,purchases:purs,customers:custs,debts,invoices:invs});
+function setp(o,k,v){const a=k.split('.');let c=o;for(let i=0;i<a.length-1;i++)c=c[a[i]];c[a[a.length-1]]=v}
+document.addEventListener('input',e=>{const el=e.target;
+ if(el.hasAttribute('data-u')&&S.pu){setp(S.pu,el.dataset.u,el.value);const k=el.dataset.u,n=el.tagName==='SELECT';render();if(!n){const x=$(`[data-u="${k}"]`);if(x){x.focus();try{x.setSelectionRange(x.value.length,x.value.length)}catch(z){}}}}
+ if(el.id==='cuq'||el.id==='iq'){const id=el.id;S[id]=el.value;render();const x=$('#'+id);x.focus();x.setSelectionRange(x.value.length,x.value.length)}});
+document.addEventListener('change',e=>{const s=e.target.dataset.sel;if(s==='ifr'||s==='ito'){S.d[s]=e.target.value;render()}});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;const a=b.dataset.a,v=b.dataset.v;
+ if(a==='nav'){S.sv='';S.cv='';S.iv='';S.pu=null;S.rc=null}
+ if(a==='back2'){S.sv='';S.cv='';S.iv='';S.pu=null;S.rc=null;render()}else if(a==='sfadd'){S.sf=!S.sf;render()}else if(a==='sopen'){S.sv=v;S.se='';render()}
+ else if(a==='ssave'){const n=(S.d.sn||'').trim();S.se=!n?t('req'):S.sup.some(s=>s.n.toLowerCase()===n.toLowerCase())?t('p_dup'):'';if(S.se)return render();mock(500).then(()=>{S.sup.push({n,ph:S.d.sph||''});S.d.sn='';S.d.sph='';S.sf=false;toast(t('p_saved'));render()})}
+ else if(a==='spay')spay();else if(a==='pnew'){S.pu={sup:'',l:[nl()],paid:'',m:'cash',ref:''};S.pe2={};render()}else if(a==='pladd'){S.pu.l.push(nl());render()}else if(a==='pldel'){S.pu.l.splice(+v,1);render()}
+ else if(a==='psave2')psave2();else if(a==='pdet'){S.pd=S.pd===v?'':v;render()}
+ else if(a==='cfadd'){S.cf2=!S.cf2;render()}else if(a==='copen'){S.cv=v;S.page='customers';S.ce2='';render()}
+ else if(a==='csave'){const n=(S.d.cn||'').trim();S.ce2=!n?t('req'):S.custs.some(c=>c.toLowerCase()===n.toLowerCase())?t('p_dup'):'';if(S.ce2)return render();mock(500).then(()=>{S.custs.push(n);S.cinfo[n]={ph:S.d.cph||''};S.d.cn='';S.d.cph='';S.cf2=false;toast(t('p_saved'));render()})}
+ else if(a==='cpay')cpay();else if(a==='iopen'){S.iv=v;render()}else if(a==='irc'){S.rc=norm(S.sales.find(x=>x.no===v));render()}
+ else if(a==='rshare2'){const s=S.sales.find(x=>x.no===v),tx=`${s.no} · ${tz2(s.tot)}`;if(navigator.share)navigator.share({title:'ShopFlow',text:tx}).catch(()=>{});else toast(t('x_nosh'))}
+ else if(a==='ivoid')ivoid(v)});
+</script>
+<script>
+const EC=['rent','electricity','water','transport','salaries','internet','maintenance','equipment','other'];
+const L4={ec_rent:["Kodi","Rent"],ec_electricity:["Umeme","Electricity"],ec_water:["Maji","Water"],ec_transport:["Usafiri","Transport"],ec_salaries:["Mishahara","Salaries"],ec_internet:["Intaneti","Internet"],ec_maintenance:["Matengenezo","Maintenance"],ec_equipment:["Vifaa","Equipment"],ec_other:["Nyingine","Other"],
+e_add:["Ongeza matumizi","Add expense"],e_cat:["Aina ya matumizi","Category"],e_amt:["Kiasi","Amount"],e_date:["Tarehe","Date"],e_desc:["Maelezo","Description"],e_rc:["Risiti (picha au PDF)","Receipt (image or PDF)"],e_all:["Aina zote","All categories"],e_tot:["Jumla ya matumizi","Total expenses"],e_none:["Hakuna matumizi kwa kipindi hiki.","No expenses for this period."],e_ed:["imehaririwa","edited"],e_edit:["Hariri matumizi","Edit expense"],
+cb_in:["Pesa iliyoingia","Cash received"],cb_out:["Pesa iliyotoka","Cash paid out"],cb_bal:["Salio la fedha","Cash balance"],cb_cr:["Mauzo ya mkopo (si pesa taslimu)","Credit sales (not cash received)"],cb_open:["Salio la kuanzia (onyesho)","Opening balance (demo)"],cb_sale:["Mauzo","Sale"],cb_collect:["Ukusanyaji wa deni","Debt collection"],cb_expense:["Matumizi","Expense"],cb_refund:["Marejesho","Refund"],cb_purchase:["Manunuzi","Purchase"],cb_spay:["Malipo kwa msambazaji","Supplier payment"],cb_run:["Salio","Balance"],cb_note:["Mauzo ya mkopo hayahesabiwi kama pesa hadi yalipwe.","Credit sales are not counted as cash until they are paid."],
+rp_sales:["Mauzo","Sales"],rp_profit:["Faida","Profit"],rp_exp:["Matumizi","Expenses"],rp_debts:["Madeni","Debts"],rp_inv:["Stoo","Inventory"],rp_prod:["Bidhaa","Products"],rp_day:["Siku","Day"],rp_week:["Wiki","Week"],rp_month:["Mwezi","Month"],rp_year:["Mwaka","Year"],rp_rev:["Mapato ya mauzo","Sales revenue"],rp_cogs:["Gharama ya bidhaa (makadirio)","Cost of goods (estimate)"],rp_gp:["Faida ghafi (makadirio)","Gross profit (estimate)"],rp_op:["Faida ya uendeshaji (makadirio)","Operating profit (estimate)"],
+rp_qn:["Mauzo ya Haraka hayana gharama ya bidhaa, kwa hiyo hayamo kwenye faida ghafi.","Quick Sales have no product cost, so they are not in gross profit."],rp_cash:["Pesa iliyopokelewa − matumizi (makadirio)","Received − expenses (estimate)"],rp_best:["Zinazouzwa sana","Best-selling"],rp_slow:["Hazijauzwa kipindi hiki","Slow-moving (no sales)"],
+rp_br:["Ulinganisho wa matawi unahitaji data ya maduka mengi kutoka backend.","Branch comparison needs multi-store data from the backend."],rp_calc:["Takwimu zimekokotolewa kwenye kivinjari kutoka data ya majaribio. Za kweli zitatoka FastAPI.","Figures are computed in the browser from mock data. Real figures will come from FastAPI."],
+rp_7:["Siku 7","7 days"],rp_30:["Siku 30","30 days"],rp_all:["Zote","All time"],rp_cnt:["Idadi ya mauzo","Sales count"],rp_sold:["zimeuzwa","sold"],rp_by:["Panga kwa","Group by"],rp_low:["Zinakaribia kuisha","Low stock items"],rp_outn:["Zimeisha","Out of stock items"]};
+for(const k in L4){T.sw[k]=L4[k][0];T.en[k]=L4[k][1]}
+const dAdd=n=>new Date(Date.now()-n*864e5).toISOString().slice(0,10);
+S.sales.forEach(s=>{if(s.p0===undefined)s.p0=s.paid});
+const sIt={'INV-0148':[['Sukari 1kg',21,2,3500],['Mafuta ya alizeti 1L',31,1,5500],['Pepsi 500ml',12,6,1000]],'INV-0147':[['Sukari 1kg',21,6,3500],['Mafuta ya alizeti 1L',31,2,5500],['Pepsi 500ml',12,10,1000]],'INV-0146':[['Pepsi 2L',14,1,2000],['Mafuta ya alizeti 1L',31,1,5500]]};
+S.sales.forEach(s=>{if(sIt[s.no]&&!s.items)s.items=sIt[s.no].map(([n,vid,q,price])=>({n,vid,q,price,disc:0}))});
+Object.assign(S,{exp:[{id:1,d:'2026-11-05',cat:'rent',a:150000,m:'bank',store:'s1',desc:'Kodi ya duka',rc:''},{id:2,d:'2026-11-07',cat:'transport',a:12000,m:'cash',store:'s1',desc:'Usafiri wa mizigo',rc:'risiti-001.jpg'},{id:3,d:'2026-11-03',cat:'electricity',a:35000,m:'mm',store:'s1',desc:'LUKU',rc:''}],ef:null,ee:{},rt:'sales',rg:'day'});
+const sbtn=(a,list,cur)=>segB(a,list,cur);
+const dsel=(k,l)=>`<label style="display:flex;gap:6px;align-items:center">${l}<input type="date" data-s2="${k}" value="${S.d[k]||''}" style="width:auto;min-height:38px"></label>`;
+const inR=(d,a,b)=>(!S.d[a]||d>=S.d[a])&&(!S.d[b]||d<=S.d[b]);
+const bars=(its,fmt=tz2)=>{if(!its.length)return '';const W=Math.max(420,its.length*52),mx=Math.max(...its.map(x=>x.v),1);return `<div class="ov"><svg viewBox="0 0 ${W} 160" width="${W}" style="max-width:100%;min-width:${Math.min(W,420)}px" role="img">${its.map((x,i)=>{const h=x.v/mx*110;return `<rect x="${i*52+8}" y="${130-h}" width="38" height="${h}" rx="3" style="fill:var(--ac)"><title>${esc(x.l)}: ${fmt(x.v)}</title></rect><text x="${i*52+27}" y="148" text-anchor="middle" font-size="10" style="fill:var(--mu)">${esc(String(x.l).slice(-5))}</text>`}).join('')}</svg></div>`};
+function exps(){if(S.ef)return eform();const fc=S.d.efc||'',rows=S.exp.filter(x=>(!fc||x.cat===fc)&&inR(x.d,'efr','eto')).sort((a,b)=>a.d<b.d?1:-1),tt=rows.reduce((a,x)=>a+x.a,0);
+ return `<div class="pg"><div class="ph"><h1>${t('nav').expenses}</h1><span class="sp"></span><button class="btn au" data-a="eadd">+ ${t('e_add')}</button></div><div class="ph"><select data-s2="efc"><option value="">${t('e_all')}</option>${EC.map(c=>`<option value="${c}" ${fc===c?'selected':''}>${t('ec_'+c)}</option>`).join('')}</select>${dsel('efr',t('n_from'))}${dsel('eto',t('n_to'))}</div>
+ <div class="kp"><div><small>${t('e_tot')}</small><b>${tz2(tt)}</b></div></div>${rows.length?H([t('e_date'),t('e_cat'),t('e_desc'),t('store'),t('x_pay'),t('e_amt'),''],rows.map(x=>`<tr><td>${x.d}</td><td>${t('ec_'+x.cat)}</td><td>${esc(x.desc)}${x.rc?` 📎`:''}${x.edited?` <small style="color:var(--mu)">(${t('e_ed')})</small>`:''}</td><td>${esc(stn(x.store))}</td><td>${t('x_'+x.m)}</td><td>${tz2(x.a)}</td><td><button class="lnk" data-a="eedit" data-v="${x.id}">${t('p_edt')}</button></td></tr>`).join('')):`<p class="sub">${t('e_none')}</p>`}</div>`}
+function eform(){const f=S.ef,e=S.ee,I=(k,l,v,ty='text')=>`<label class="f${e[k]?' bad':''}"><span>${l}</span><input data-e="${k}" type="${ty}" value="${esc(v)}" ${ty==='number'?'min="0"':''}>${e[k]?`<em>${e[k]}</em>`:''}</label>`;
+ return `<div class="pg" style="max-width:600px"><h1>${f.id?t('e_edit'):t('e_add')}</h1><label class="f${e.cat?' bad':''}"><span>${t('e_cat')}</span><select data-e="cat"><option value="">${t('pick')}</option>${EC.map(c=>`<option value="${c}" ${f.cat===c?'selected':''}>${t('ec_'+c)}</option>`).join('')}</select>${e.cat?`<em>${e.cat}</em>`:''}</label>
+ <div class="row">${I('a',t('e_amt'),f.a,'number')}${I('d',t('e_date'),f.d,'date')}</div><div class="row"><label class="f"><span>${t('store')}</span><select data-e="store">${['s1','s2'].map(s=>`<option value="${s}" ${f.store===s?'selected':''}>${esc(stn(s))}</option>`).join('')}</select></label><label class="f"><span>${t('x_pay')}</span><select data-e="m">${m3(f.m)}</select></label></div>
+ ${I('desc',t('e_desc'),f.desc)}<label class="f"><span>${t('e_rc')}</span><input type="file" data-efile accept="image/*,application/pdf">${f.rc?`<small style="color:var(--mu)">📎 ${esc(f.rc)}</small>`:''}</label>
+ <div class="nav"><button class="btn ghost" data-a="ecancel">${t('p_cancel')}</button><button class="btn" data-a="esave" ${S.busy?'disabled':''}>${S.busy?t('wait'):t('p_save')}</button></div></div>`}
+async function esave(){const f=S.ef,e={};if(!f.cat)e.cat=t('req');if(!(+f.a>0))e.a=t('p_pos');if(!f.d)e.d=t('req');S.ee=e;if(Object.keys(e).length)return render();
+ S.busy=true;render();await mock(600);S.busy=false;const r={id:f.id||Date.now(),d:f.d,cat:f.cat,a:+f.a,m:f.m,store:f.store,desc:f.desc,rc:f.rc};
+ if(f.id)S.exp=S.exp.map(x=>x.id===f.id?{...r,edited:true}:x);else S.exp.push(r);S.ef=null;toast(t('p_saved'));render()}
+function cbE(){const E=[{d:'2026-10-01',ty:'open',ref:'—',i:500000,o:0,m:''}];S.sales.forEach(s=>{if(s.p0>0)E.push({d:s.d,ty:'sale',ref:s.no,i:s.p0,o:0,m:s.m.filter(x=>x!=='credit').map(x=>t('x_'+x)).join(', ')});if(s.void&&s.paid>0)E.push({d:s.vd||s.d,ty:'refund',ref:s.no,i:0,o:s.paid,m:''})});
+ S.cpay.forEach(p=>E.push({d:p.d,ty:'collect',ref:p.cust,i:p.a,o:0,m:t('x_'+p.m)}));S.exp.forEach(x=>E.push({d:x.d,ty:'expense',ref:t('ec_'+x.cat),i:0,o:x.a,m:t('x_'+x.m)}));
+ S.pur.forEach(p=>{if(p.paid>0)E.push({d:p.d,ty:'purchase',ref:p.no,i:0,o:p.paid,m:''})});S.spay.forEach(p=>E.push({d:p.d,ty:'spay',ref:p.sup,i:0,o:p.a,m:t('x_'+p.m)}));
+ E.sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:0);let bal=0;E.forEach(x=>{bal+=x.i-x.o;x.b=bal});return E}
+function cash(){const E=cbE(),R=E.filter(x=>inR(x.d,'cfr','cto')),I=R.reduce((a,x)=>a+x.i,0),O=R.reduce((a,x)=>a+x.o,0),cr=S.sales.filter(s=>!s.void&&inR(s.d,'cfr','cto')).reduce((a,s)=>a+(s.tot-s.p0),0);
+ return `<div class="pg"><h1>${t('nav').cashbook}</h1><div class="ph">${dsel('cfr',t('n_from'))}${dsel('cto',t('n_to'))}</div><div class="kp"><div><small>${t('cb_in')}</small><b>${tz2(I)}</b></div><div><small>${t('cb_out')}</small><b>${tz2(O)}</b></div><div><small>${t('cb_bal')}</small><b>${tz2(E.length?E[E.length-1].b:0)}</b></div><div><small>${t('cb_cr')}</small><b>${tz2(cr)}</b></div></div>
+ ${H([t('e_date'),t('s_type'),t('i_ref'),t('x_pay'),t('cb_in'),t('cb_out'),t('cb_run')],R.slice().reverse().map(x=>`<tr><td>${x.d}</td><td>${t('cb_'+x.ty)}</td><td>${esc(x.ref)}</td><td>${esc(x.m)}</td><td style="color:var(--ok)">${x.i?tz2(x.i):''}</td><td style="color:var(--er)">${x.o?tz2(x.o):''}</td><td>${tz2(x.b)}</td></tr>`).join(''))}<p class="note">${t('cb_note')}</p></div>`}
+const wk=d=>{const x=new Date(d);x.setUTCDate(x.getUTCDate()-((x.getUTCDay()+6)%7));return x.toISOString().slice(0,10)};
+const gk=d=>S.rg==='day'?d:S.rg==='week'?wk(d):S.rg==='month'?d.slice(0,7):d.slice(0,4);
+function reps(){const q=S.d.mode==='quick',tabs=[['sales',t('rp_sales')],['profit',t('rp_profit')],['exp',t('rp_exp')],['debts',t('rp_debts')],...(q?[]:[['inv',t('rp_inv')],['prod',t('rp_prod')]])],tb=tabs.some(x=>x[0]===S.rt)?S.rt:'sales';
+ const ss=S.sales.filter(s=>!s.void&&inR(s.d,'rfr','rto')),ex=S.exp.filter(x=>inR(x.d,'rfr','rto')),rev=ss.reduce((a,s)=>a+s.tot,0),exT=ex.reduce((a,x)=>a+x.a,0);let b='';
+ if(tb==='sales'){const g={};ss.forEach(s=>{const k=gk(s.d);g[k]=g[k]||{v:0,n:0,r:0};g[k].v+=s.tot;g[k].n++;g[k].r+=s.p0});const ks=Object.keys(g).sort();
+  b=`<div class="ph"><span class="stl">${t('rp_by')}</span>${segB('rg',[['day',t('rp_day')],['week',t('rp_week')],['month',t('rp_month')],['year',t('rp_year')]],S.rg)}</div><div class="kp"><div><small>${t('rp_rev')}</small><b>${tz2(rev)}</b></div><div><small>${t('rp_cnt')}</small><b>${ss.length}</b></div></div>${bars(ks.map(k=>({l:k,v:g[k].v})))}${H([t('e_date'),t('rp_cnt'),t('rp_rev'),t('x_paid')],ks.map(k=>`<tr><td>${k}</td><td>${g[k].n}</td><td>${tz2(g[k].v)}</td><td>${tz2(g[k].r)}</td></tr>`).join(''))}`}
+ if(tb==='profit'){let cogs=0,gpRev=0;ss.filter(s=>s.type==='pos').forEach(s=>(s.items||[]).forEach(l=>{const r=allRows().find(x=>x.v.id==l.vid);if(r){cogs+=r.v.buy*l.q;gpRev+=l.price*l.q-Math.min(+l.disc||0,l.price*l.q)}}));
+  const gp=gpRev-cogs,rec=ss.reduce((a,s)=>a+s.p0,0);
+  b=`<div class="kp"><div><small>${t('rp_rev')}</small><b>${tz2(rev)}</b></div>${q?`<div><small>${t('rp_cash')}</small><b>${tz2(rec-exT)}</b></div>`:`<div><small>${t('rp_cogs')}</small><b>${tz2(cogs)}</b></div><div><small>${t('rp_gp')}</small><b>${tz2(gp)}</b></div><div><small>${t('rp_op')}</small><b>${tz2(gp-exT)}</b></div>`}<div><small>${t('e_tot')}</small><b>${tz2(exT)}</b></div></div><p class="note">${t('rp_qn')}</p>`}
+ if(tb==='exp'){const g=EC.map(c=>({l:t('ec_'+c),v:ex.filter(x=>x.cat===c).reduce((a,x)=>a+x.a,0)})).filter(x=>x.v>0);b=`<div class="kp"><div><small>${t('e_tot')}</small><b>${tz2(exT)}</b></div></div>${bars(g)}${H([t('e_cat'),t('e_amt')],g.map(x=>`<tr><td>${x.l}</td><td>${tz2(x.v)}</td></tr>`).join(''))}`}
+ if(tb==='debts'){const ds=S.custs.filter(n=>custBal(n)>0),a=[0,1,2].map(i=>ds.reduce((s,n)=>s+bk(n)[i],0));b=`<div class="kp"><div><small>${t('c_bal')}</small><b>${tz2(a[0]+a[1]+a[2])}</b></div><div><small>${t('d_a')}</small><b>${tz2(a[0])}</b></div><div><small>${t('d_b')}</small><b>${tz2(a[1])}</b></div><div><small>${t('d_c')}</small><b>${tz2(a[2])}</b></div></div>${ds.length?H([t('x_cust'),t('c_bal')],ds.map(n=>`<tr><td>${esc(n)}</td><td>${tz2(custBal(n))}</td></tr>`).join('')):`<p class="sub">${t('d_empty')}</p>`}`}
+ if(tb==='inv'){const r=allRows();b=`<div class="kp"><div><small>${t('i_cost')}</small><b>${tz2(r.reduce((a,{v})=>a+v.st*v.buy,0))}</b></div><div><small>${t('i_ret')}</small><b>${tz2(r.reduce((a,{v})=>a+v.st*v.sell,0))}</b></div><div><small>${t('rp_low')}</small><b>${r.filter(({v})=>stt(v)==='low').length}</b></div><div><small>${t('rp_outn')}</small><b>${r.filter(({v})=>stt(v)==='out').length}</b></div></div>`}
+ if(tb==='prod'){const g={};ss.forEach(s=>(s.items||[]).forEach(l=>{g[l.n]=(g[l.n]||0)+l.q}));const top=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,6),slow=allRows().filter(({p,v})=>v.st>0&&!g[(p.n+' '+v.l).trim()]);
+  b=`<h3>${t('rp_best')}</h3>${bars(top.map(([l,v])=>({l,v})),x=>x+' '+t('units'))}${H([t('p_name'),t('i_qty')],top.map(([n,q])=>`<tr><td>${esc(n)}</td><td>${q} ${t('rp_sold')}</td></tr>`).join(''))}<h3 style="margin-top:20px">${t('rp_slow')}</h3>${H([t('p_name'),t('p_stc')],slow.map(({p,v})=>`<tr><td>${esc((p.n+' '+v.l).trim())}</td><td>${v.st}</td></tr>`).join(''))}`}
+ return `<div class="pg"><h1>${t('nav').reports}</h1><div class="ph">${segB('rt',tabs,tb)}</div><div class="ph">${dsel('rfr',t('n_from'))}${dsel('rto',t('n_to'))}${segB('rpre',[['7',t('rp_7')],['30',t('rp_30')],['all',t('rp_all')]],'')}</div>${b}<p class="note">${t('rp_calc')} ${S.store==='all'?t('rp_br'):''}</p></div>`}
+Object.assign(PG,{expenses:exps,cashbook:cash,reports:reps});
+document.addEventListener('input',e=>{const el=e.target;if(el.hasAttribute('data-e')&&S.ef){setp(S.ef,el.dataset.e,el.value);const k=el.dataset.e,sel=el.tagName==='SELECT';render();if(!sel){const x=$(`[data-e="${k}"]`);if(x){x.focus();try{x.setSelectionRange(x.value.length,x.value.length)}catch(z){}}}}});
+document.addEventListener('change',e=>{const el=e.target;if(el.dataset.s2){S.d[el.dataset.s2]=el.value;render()}if(el.hasAttribute('data-efile')&&S.ef){S.ef.rc=el.files[0]?el.files[0].name:'';render()}});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;const a=b.dataset.a,v=b.dataset.v;
+ if(a==='nav')S.ef=null;
+ if(a==='eadd'){S.ef={d:nowD(),cat:'',a:'',m:'cash',store:S.store==='s2'?'s2':'s1',desc:'',rc:''};S.ee={};render()}
+ else if(a==='eedit'){S.ef={...S.exp.find(x=>x.id==v)};S.ee={};render()}else if(a==='ecancel'){S.ef=null;render()}else if(a==='esave')esave();
+ else if(a==='rt'){S.rt=v;render()}else if(a==='rg'){S.rg=v;render()}else if(a==='rpre'){S.d.rfr=v==='all'?'':dAdd(+v);S.d.rto='';render()}});
+</script>
+<script>
+const L6={a_ph:["Uliza kuhusu biashara yako…","Ask about your business…"],a_send:["Tuma","Send"],a_new:["Mazungumzo mapya","New chat"],a_hist:["Historia","History"],a_sugg:["Maswali yanayopendekezwa","Suggested questions"],
+a_disc:["Majibu ya AI ni mapendekezo tu. Msaidizi hawezi kubadilisha stoo, bei, malipo wala mauzo.","AI answers are recommendations only. The assistant cannot change stock, prices, payments or sales."],
+a_demo:["Onyesho: majibu yanatokana na kanuni rahisi juu ya data ya majaribio, si modeli halisi ya AI.","Preview: answers come from simple rules over mock data, not a real AI model."],a_err:["Hitilafu ya mtandao. Jaribu tena.","Network error. Please try again."],a_retry:["Jaribu tena","Retry"],a_think:["Inafikiri…","Thinking…"],a_empty:["Anza kwa kuuliza swali au chagua pendekezo.","Start by asking a question or pick a suggestion."],a_rec:["Pendekezo","Recommendation"],a_per:["Kipindi","Period"],
+a_q1:["Leo nimeuza kiasi gani?","How much have I sold today?"],a_q2:["Ni bidhaa gani zinazokaribia kuisha?","Which products are running low?"],a_q3:["Nina madeni kiasi gani?","How much debt do I have?"],a_q4:["Ni bidhaa gani zinazouzwa sana?","Which products sell the most?"],a_q5:["Linganisha mwezi huu na uliopita.","Compare this month with last month."],a_q6:["Nifanyeje kuongeza mauzo ya duka langu?","How can I improve my shop’s sales?"],
+a_sales_ok:["Leo ({d}) mauzo ni {v}, na {r} zimepokelewa.","Today ({d}) sales are {v}, and {r} was received."],a_sales_old:["Bado hakuna mauzo leo. Siku ya mwisho yenye mauzo ni {d}: {v}.","No sales recorded today yet. The last sales day was {d}: {v}."],
+a_low0:["Hakuna bidhaa inayokaribia kuisha.","Nothing is running low."],a_low:["Bidhaa hizi zimekaribia kuisha au zimeisha:","These items are low or out of stock:"],a_debt:["Jumla ya madeni ni {v}. Wadeni wakubwa:","Total outstanding debt is {v}. Largest debtors:"],a_debt0:["Hakuna madeni kwa sasa.","There are no outstanding debts."],
+a_best:["Bidhaa zinazouzwa sana (kwa idadi):","Best-selling products (by quantity):"],a_none:["Bado hakuna data ya mauzo ya bidhaa.","There is no product sales data yet."],a_cmp:["Mauzo ya {m1}: {v1}. Mwezi uliopita ({m0}): {v0}. {ch}","Sales in {m1}: {v1}. Last month ({m0}): {v0}. {ch}"],
+a_up:["Ongezeko la {p}%.","Up {p}%."],a_down:["Upungufu wa {p}%.","Down {p}%."],a_nopr:["Hakuna data ya mwezi uliopita ya kulinganisha.","There is no data from last month to compare."],
+a_exp:["Matumizi ya {m}: {v}. Makubwa zaidi:","Expenses in {m}: {v}. Largest:"],a_exp0:["Hakuna matumizi yaliyorekodiwa {m}.","No expenses recorded for {m}."],
+a_prof:["Faida ghafi (makadirio) ya {m} ni {gp}; baada ya matumizi: {op}. Ni makadirio kutoka bei za kununua za sasa.","Estimated gross profit for {m} is {gp}; after expenses: {op}. These are estimates from current purchase prices."],
+a_reo0:["Hakuna bidhaa inayohitaji kuagizwa sasa.","Nothing needs reordering now."],a_reo:["Pendekezo la kuagiza (idadi inalenga mara mbili ya kiwango cha chini):","Suggested reorder (quantity aims for twice the minimum level):"],
+a_imp:["Mapendekezo ya kuongeza mauzo kulingana na data yako:","Suggestions to improve sales based on your data:"],a_imp1:["Agiza bidhaa {n} zilizo chini ya kiwango (mfano {e}).","Restock {n} items below minimum (e.g. {e})."],
+a_imp2:["Kusanya madeni ya zaidi ya siku 30: {v}.","Collect debts older than 30 days: {v}."],a_imp3:["Hamasisha bidhaa zisizouzwa kipindi hiki (mfano {e}): punguza bei kidogo au ziweke mbele.","Promote items with no sales this month (e.g. {e}): a small discount or better placement."],
+a_imp4:["Kagua matumizi makubwa zaidi: {e}.","Review your biggest expense: {e}."],a_imp0:["Hakuna pendekezo maalum kwa sasa; endelea kurekodi mauzo.","No specific suggestion right now; keep recording sales."],
+a_stores:["Ulinganisho wa matawi unahitaji data ya maduka mengi kutoka backend. Onyesho lina data ya duka moja tu.","Store comparison needs multi-store data from the backend. This preview has one store’s data only."],
+a_act:["Siwezi kubadilisha stoo, bei, malipo wala mauzo. Tumia sehemu husika (Stoo, Bidhaa, Mauzo) kufanya mabadiliko.","I can’t change stock, prices, payments or sales. Please use the relevant screens (Inventory, Products, Sales) to make changes."],
+a_unk:["Sijaelewa swali. Jaribu mojawapo ya haya:","I didn’t understand that. Try one of these:"],a_qm:["Takwimu za bidhaa hazipatikani kwenye hali ya Mauzo ya Haraka.","Product-level insights are not available in Quick Sales mode."]};
+for(const k in L6){T.sw[k]=L6[k][0];T.en[k]=L6[k][1]}
+S.ai={chats:[{id:1,title:'',msgs:[]}],cur:1,busy:false,err:'',draft:''};
+const f=(k,o={})=>t(k).replace(/\{(\w+)\}/g,(_,n)=>o[n]);
+const mon=o=>{const d=new Date();d.setUTCDate(1);d.setUTCMonth(d.getUTCMonth()-o);return d.toISOString().slice(0,7)};
+const sumM=m=>S.sales.filter(s=>!s.void&&s.d.startsWith(m)).reduce((a,s)=>a+s.tot,0);
+const soldM=m=>{const g={};S.sales.filter(s=>!s.void&&(!m||s.d.startsWith(m))).forEach(s=>(s.items||[]).forEach(l=>{g[l.n]=(g[l.n]||0)+l.q}));return g};
+function answer(q){const x=q.toLowerCase(),qm=S.d.mode==='quick',m1=mon(0),ctx=`${m1} · ${stn(S.store)}`,R=(text,cards=[],rec=false)=>({text,cards,rec,ctx});
+ const low=()=>allRows().filter(({v})=>v.st<=v.min),top=o=>Object.entries(o).sort((a,b)=>b[1]-a[1]);
+ if(/badilisha|change price|set price|futa|delete|sasisha|update stock|record sale|rekodi mauzo|refund|rudisha/.test(x))return R(f('a_act'));
+ if(/compare|linganisha|uliopita|last month/.test(x)){const m0=mon(1),v1=sumM(m1),v0=sumM(m0),ch=v0?(v1>=v0?f('a_up',{p:Math.round((v1-v0)/v0*100)}):f('a_down',{p:Math.round((v0-v1)/v0*100)})):t('a_nopr');
+  return {...R(f('a_cmp',{m1,v1:tz2(v1),m0,v0:tz2(v0),ch}),[{t:m1,v:tz2(v1)},{t:m0,v:tz2(v0)}]),ctx:`${m0} → ${m1}`}}
+ if(/improve|boost|increase|kuongeza|ongeza mauzo|nifanyeje|how can/.test(x)){const L=[],lo=low(),dd=S.custs.reduce((a,n)=>a+bk(n)[2],0),g=soldM(m1),slow=allRows().filter(({p,v})=>v.st>0&&!g[(p.n+' '+v.l).trim()]),ce=EC.map(c=>[c,S.exp.filter(e=>e.cat===c&&e.d.startsWith(m1)).reduce((a,e)=>a+e.a,0)]).sort((a,b)=>b[1]-a[1])[0];
+  if(!qm&&lo.length)L.push(f('a_imp1',{n:lo.length,e:(lo[0].p.n+' '+lo[0].v.l).trim()}));if(dd>0)L.push(f('a_imp2',{v:tz2(dd)}));if(!qm&&slow.length)L.push(f('a_imp3',{e:(slow[0].p.n+' '+slow[0].v.l).trim()}));if(ce&&ce[1]>0)L.push(f('a_imp4',{e:`${t('ec_'+ce[0])} (${tz2(ce[1])})`}));
+  return R(L.length?f('a_imp')+'\n'+L.map(s=>'• '+s).join('\n'):f('a_imp0'),[],true)}
+ if(/madeni|deni|debt|owe/.test(x)){const ds=S.custs.filter(n=>custBal(n)>0).sort((a,b)=>custBal(b)-custBal(a)),tt=ds.reduce((a,n)=>a+custBal(n),0);return ds.length?R(f('a_debt',{v:tz2(tt)})+'\n'+ds.slice(0,3).map(n=>`• ${n} — ${tz2(custBal(n))}`).join('\n'),[{t:t('c_bal'),v:tz2(tt)},{t:t('d_c'),v:tz2(ds.reduce((a,n)=>a+bk(n)[2],0))}]):R(f('a_debt0'))}
+ if(/zinazouzwa|uzwa sana|best|top|selling|sell the most|popular/.test(x)){if(qm)return R(f('a_qm'));const g=top(soldM('')).slice(0,5);return g.length?R(f('a_best')+'\n'+g.map(([n,q])=>`• ${n} — ${q} ${t('units')}`).join('\n'),[{t:g[0][0],v:g[0][1]+' '+t('units')}]):R(f('a_none'))}
+ if(/reorder|agiza|restock|nunua|buy more/.test(x)){if(qm)return R(f('a_qm'));const lo=low().map(({p,v})=>({n:(p.n+' '+v.l).trim(),q:Math.max(v.min*2-v.st,1),c:Math.max(v.min*2-v.st,1)*v.buy}));return lo.length?R(f('a_reo')+'\n'+lo.map(o=>`• ${o.n} — ${o.q} (${tz2(o.c)})`).join('\n'),[{t:t('u_tot'),v:tz2(lo.reduce((a,o)=>a+o.c,0))}],true):R(f('a_reo0'))}
+ if(/kuisha|stoo|stock|low|zimeisha|running low/.test(x)){if(qm)return R(f('a_qm'));const lo=low();return lo.length?R(f('a_low')+'\n'+lo.map(({p,v})=>`• ${(p.n+' '+v.l).trim()} — ${v.st} ${t('left')}`).join('\n'),[{t:t('rp_low'),v:String(lo.length)}]):R(f('a_low0'))}
+ if(/matumizi|expense|spend/.test(x)){const ex=S.exp.filter(e=>e.d.startsWith(m1)),tt=ex.reduce((a,e)=>a+e.a,0);if(!ex.length)return R(f('a_exp0',{m:m1}));const g=EC.map(c=>[c,ex.filter(e=>e.cat===c).reduce((a,e)=>a+e.a,0)]).filter(a=>a[1]).sort((a,b)=>b[1]-a[1]).slice(0,3);return R(f('a_exp',{m:m1,v:tz2(tt)})+'\n'+g.map(([c,v])=>`• ${t('ec_'+c)} — ${tz2(v)}`).join('\n'),[{t:t('e_tot'),v:tz2(tt)}])}
+ if(/faida|profit/.test(x)){if(qm)return R(f('a_qm'));let gp=0;S.sales.filter(s=>!s.void&&s.type==='pos'&&s.d.startsWith(m1)).forEach(s=>(s.items||[]).forEach(l=>{const r=allRows().find(y=>y.v.id==l.vid);if(r)gp+=l.price*l.q-r.v.buy*l.q}));const ex=S.exp.filter(e=>e.d.startsWith(m1)).reduce((a,e)=>a+e.a,0);return R(f('a_prof',{m:m1,gp:tz2(gp),op:tz2(gp-ex)}),[{t:t('rp_gp'),v:tz2(gp)},{t:t('rp_op'),v:tz2(gp-ex)}])}
+ if(/tawi|matawi|branch|store|maduka/.test(x))return R(f('a_stores'));
+ if(/leo|today|mauzo|sold|sales|nimeuza/.test(x)){const td=nowD();let day=td,l=S.sales.filter(s=>!s.void&&s.d===td);if(!l.length){day=S.sales.filter(s=>!s.void).map(s=>s.d).sort().pop();l=S.sales.filter(s=>!s.void&&s.d===day)}const v=l.reduce((a,s)=>a+s.tot,0),r=l.reduce((a,s)=>a+s.p0,0);
+  return {...R(day===td?f('a_sales_ok',{d:day,v:tz2(v),r:tz2(r)}):f('a_sales_old',{d:day,v:tz2(v)}),[{t:t('k_sales'),v:tz2(v)},{t:t('x_paid'),v:tz2(r)},{t:t('x_due'),v:tz2(v-r)}]),ctx:`${day} · ${stn(S.store)}`}}
+ return R(f('a_unk'),[],false)}
+function fmt(x){let o='',ul=false;x.split('\n').forEach(l=>{if(l.startsWith('• ')){if(!ul){o+='<ul>';ul=true}o+=`<li>${esc(l.slice(2))}</li>`}else{if(ul){o+='</ul>';ul=false}o+=`<p>${esc(l)}</p>`}});return o+(ul?'</ul>':'')}
+const aiCur=()=>S.ai.chats.find(c=>c.id===S.ai.cur);
+function ai(){const A=S.ai,c=aiCur(),sq=[1,2,3,4,5,6].map(i=>t('a_q'+i));
+ const bub=m=>m.r==='u'?`<div class="bub bu">${esc(m.x)}</div>`:`<div class="bub ba">${fmt(m.text)}${(m.cards||[]).length?`<div class="acs">${m.cards.map(k=>`<div class="ac2"><small>${esc(k.t)}</small><b>${esc(k.v)}</b></div>`).join('')}</div>`:''}<small class="ctx">${t('a_per')}: ${esc(m.ctx||'')}</small>${m.rec?` <span class="chip p">${t('a_rec')}</span>`:''}${m.text===t('a_unk')?`<div class="sg">${sq.slice(0,4).map(s=>`<button class="lnk" data-a="aisg" data-v="${esc(s)}">${esc(s)}</button>`).join('')}</div>`:''}</div>`;
+ return `<div class="pg"><div class="ph"><h1>${t('nav').ai}</h1></div><div class="aiw"><div class="aih"><button class="btn ghost" data-a="ainew" style="min-height:40px">+ ${t('a_new')}</button>${A.chats.map(h=>`<button class="nv" data-a="aich" data-v="${h.id}" ${A.cur===h.id?'aria-current="page"':''}><span>${esc(h.title||t('a_new'))}</span></button>`).join('')}</div>
+ <div><p class="note" style="margin-top:0">${t('a_disc')}<br>${t('a_demo')}</p><div class="msgs" aria-live="polite">${c.msgs.length?c.msgs.map(bub).join(''):`<p class="sub">${t('a_empty')}</p><div class="sg">${sq.map(s=>`<button class="tile" data-a="aisg" data-v="${esc(s)}" style="min-height:0">${esc(s)}</button>`).join('')}</div>`}${A.busy?`<div class="bub ba"><small>${t('a_think')}</small></div>`:''}${A.err?`<div class="bub ba" style="border-color:var(--er)"><small style="color:var(--er)">${t('a_err')}</small> <button class="lnk" data-a="airetry">${t('a_retry')}</button></div>`:''}</div>
+ <div class="row" style="gap:8px;margin-top:10px"><input id="aiq" value="${esc(A.draft)}" placeholder="${t('a_ph')}" autocomplete="off"><button class="btn au" data-a="aisend" ${A.busy?'disabled':''}>${t('a_send')}</button></div></div></div></div>`}
+const scrollM=()=>{const m=$('.msgs');if(m)m.scrollTop=m.scrollHeight};
+async function aiSend(q,retry){q=q.trim();if(!q||S.ai.busy)return;const c=aiCur();if(!retry){c.msgs.push({r:'u',x:q});if(!c.title)c.title=q.slice(0,28)}
+ S.ai.busy=true;S.ai.err='';S.ai.draft='';render();scrollM();await mock(800);
+ if(navigator.onLine===false){S.ai.err=q;S.ai.busy=false;render();return}
+ c.msgs.push({r:'a',...answer(q)});S.ai.busy=false;render();scrollM()}
+PG.ai=ai;
+document.addEventListener('input',e=>{if(e.target.id==='aiq')S.ai.draft=e.target.value});
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='aiq'){e.preventDefault();aiSend(e.target.value)}});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;const a=b.dataset.a,v=b.dataset.v;
+ if(a==='aisend')aiSend($('#aiq').value);else if(a==='aisg')aiSend(v);else if(a==='airetry')aiSend(S.ai.err,true);
+ else if(a==='ainew'){const id=Date.now();S.ai.chats.unshift({id,title:'',msgs:[]});S.ai.cur=id;S.ai.err='';render()}else if(a==='aich'){S.ai.cur=+v;S.ai.err='';render()}});
+</script>
+<script>
+const L7={o_on:["Mtandaoni","Online"],o_off:["Nje ya mtandao","Offline"],o_pend:["Inasubiri kusawazishwa","Pending Sync"],o_synced:["Imesawazishwa","Synced"],o_failed:["Imeshindwa","Failed"],o_conflict:["Inahitaji ukaguzi (mgongano)","Conflict Requires Review"],
+o_sync:["Sawazisha sasa","Sync now"],o_title:["Mtandao na usawazishaji","Offline and sync"],o_sim:["Washa hali ya nje ya mtandao (onyesho)","Simulate offline mode"],o_cache:["Orodha ya bidhaa iliyohifadhiwa: bidhaa {p}, aina {v}","Cached catalog: {p} products, {v} variants"],o_last:["Usawazishaji wa mwisho","Last sync"],o_never:["Bado","Never"],o_q:["Foleni ya usawazishaji","Sync queue"],o_empty:["Hakuna kinachosubiri.","Nothing is waiting."],
+o_retry:["Jaribu tena","Retry"],o_accept:["Kubali","Accept"],o_discard:["Tupa na rudisha stoo","Discard and restore stock"],o_simerr:["Kosa la mtandao kwenye usawazishaji unaofuata","Network error on next sync"],o_simconf:["Mgongano wa stoo kwenye usawazishaji unaofuata","Stock conflict on next sync"],o_simmm:["Malipo ya pesa ya simu yashindwe","Mobile money payment fails"],
+o_cashonly:["Ukiwa nje ya mtandao unaweza kupokea fedha taslimu tu.","While offline only cash is accepted."],o_mmfail:["Malipo ya simu hayakuthibitishwa. Hakuna mauzo yaliyorekodiwa.","Mobile money was not confirmed. No sale was recorded."],o_neterr:["Kosa la mtandao","Network error"],o_conf:["Stoo ya seva haitoshi, hakiki","Server stock mismatch, please review"],
+o_banner:["Uko nje ya mtandao: unaweza kuuza kwa fedha taslimu tu. Mauzo yatasawazishwa ukirudi mtandaoni.","You are offline: cash sales only. Sales sync when you are back online."],o_idb:["Foleni huhifadhiwa kwenye IndexedDB ya kivinjari (onyesho, haijajaribiwa kwenye vivinjari vyote).","The queue is stored in the browser’s IndexedDB (preview, not tested across browsers)."],o_ref:["Kumbukumbu","Reference"],
+pm_title:["Malipo","Payments"],pm_ref:["Kumbukumbu ya muamala","Transaction reference"],pm_st:["Hali","Status"],pm_confirmed:["Imethibitishwa","Confirmed"],pm_failed:["Imeshindwa","Failed"],pm_credit:["Deni","On credit"],pm_pin:["Hatuombi wala kuhifadhi PIN ya mteja; mteja huthibitisha kwenye simu yake.","We never ask for or store a customer’s PIN; the customer approves on their phone."],pm_card:["Kadi inapatikana kulingana na mpango na mtoa huduma (backend).","Card payments depend on your plan and provider (backend)."]};
+for(const k in L7){T.sw[k]=L7[k][0];T.en[k]=L7[k][1]}
+Object.assign(S,{off:false,sq:[],sim:{err:false,conf:false,mm:false},syncing:false,sp:[0,0],lastSync:'',stab:'sales',plog:[]});
+const rnd=()=>Math.floor(Math.random()*9e7+1e7);
+const chipSync=s=>`<span class="chip${s==='synced'?'':s==='pending'?' p':' e'}">${t('o_'+(s==='pending'?'pend':s))}</span>`;
+const idb=fn=>new Promise(res=>{try{const r=indexedDB.open('shopflow',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onerror=()=>res();r.onsuccess=()=>{const tx=r.result.transaction('kv','readwrite');fn(tx.objectStore('kv'),res);tx.oncomplete=()=>res()}}catch(e){res()}});
+const saveQ=()=>idb(s=>s.put(JSON.stringify(S.sq),'q'));
+const loadQ=()=>idb((s,res)=>{const g=s.get('q');g.onsuccess=()=>{try{JSON.parse(g.result||'[]').forEach(it=>{if(it.st!=='synced'&&!S.sq.some(x=>x.ref===it.ref)){S.sq.push(it);if(!S.sales.some(x=>x.no===it.ref))S.sales.unshift(it.sale)}})}catch(e){}res()}});
+function enq(s){s.sync='pending';S.sq.unshift({id:Date.now()+Math.random(),type:s.type,ref:s.no,st:'pending',err:'',ts:new Date().toISOString(),sale:s});saveQ()}
+const pill=()=>{const n=S.sq.filter(x=>x.st!=='synced').length;return `<button class="pillc${S.off?' off':''}" data-a="gosync" aria-label="${t('o_title')}">● ${S.syncing?`${t('o_sync')} ${S.sp[0]}/${S.sp[1]}`:t(S.off?'o_off':'o_on')}${n?` · ${n}`:''}</button>`};
+const _co=checkout;
+checkout=async function(){const T=tot(),ep=effPay(T.total).filter(p=>p.e>0);
+ if(S.off&&ep.some(p=>p.m!=='cash')){S.perr=t('o_cashonly');return render()}
+ if(S.sim.mm&&S.cart.length&&ep.some(p=>p.m==='mm')){S.busy=true;render();await mock(700);S.wait=true;render();await mock(1200);S.wait=false;S.busy=false;S.perr=t('o_mmfail');S.plog.unshift({d:nowD(),inv:'—',m:'mm',a:ep.filter(p=>p.m==='mm').reduce((a,p)=>a+p.e,0),ref:'MM'+rnd(),st:'failed'});return render()}
+ const n0=S.sales.length;await _co();
+ if(S.sales.length>n0){const s=S.sales[0];s.pays=ep.map(p=>({m:p.m,a:p.e,ref:p.m==='mm'?'MM'+rnd():p.m==='bank'?'BK'+rnd():'',st:p.m==='credit'?'credit':'confirmed'}));if(S.off)enq(s);render()}};
+const _qs=qsave;
+qsave=async function(){if(S.off&&S.qk.m!=='cash')return toast(t('o_cashonly'));const n0=S.sales.length;await _qs();
+ if(S.sales.length>n0){const s=S.sales[0];s.pays=s.p0>0?[{m:S.qk.m||'cash',a:s.p0,ref:'',st:'confirmed'}]:[];if(S.off)enq(s);render()}};
+async function syncNow(){if(S.off||S.syncing)return;const its=S.sq.filter(x=>x.st==='pending'||x.st==='failed');if(!its.length)return;S.syncing=true;S.sp=[0,its.length];render();
+ for(const it of its){await mock(700);if(S.sim.err){S.sim.err=false;it.st='failed';it.err=t('o_neterr')}else if(S.sim.conf){S.sim.conf=false;it.st='conflict';it.err=t('o_conf');it.sale.sync='conflict'}else{it.st='synced';it.err='';it.sale.sync='synced'}if(it.st==='failed')it.sale.sync='failed';S.sp[0]++;render()}
+ S.syncing=false;S.lastSync=new Date().toLocaleTimeString();saveQ();render()}
+function resolveQ(id,act){const it=S.sq.find(x=>x.id==id),s=it.sale;if(act==='dis'){s.void=true;s.vd=nowD();s.vreason='sync conflict';(s.items||[]).forEach(l=>{const r=allRows().find(x=>x.v.id==l.vid);if(r){r.v.st+=l.q;S.mov.unshift({d:nowD(),p:l.n,t:'return',q:l.q,r:s.no,u:S.d.name||'Owner'})}})}it.st='synced';s.sync='synced';saveQ();render()}
+function syncPage(){const pn=S.sq.filter(x=>x.st!=='synced').length,r=allRows(),sm=(a,l)=>`<label style="display:flex;gap:8px;align-items:center;margin:4px 0"><input type="checkbox" data-sim="${a}" ${S.sim[a]?'checked':''} style="width:auto;min-height:0"> ${l}</label>`;
+ return `<div class="pg" style="max-width:860px"><h1>${t('o_title')}</h1><div class="kp"><div><small>${t(S.off?'o_off':'o_on')}</small><b>● ${t(S.off?'o_off':'o_on')}</b></div><div><small>${t('o_pend')}</small><b>${pn}</b></div><div><small>${t('o_last')}</small><b>${S.lastSync||t('o_never')}</b></div></div>
+ <p class="sub">${f('o_cache',{p:S.prods.filter(p=>!p.a).length,v:r.length})}</p><div class="pn"><h3>${t('o_title')}</h3><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-osim ${S.off?'checked':''} style="width:auto;min-height:0"> ${t('o_sim')}</label></div>
+ <div class="pn"><h3>Demo</h3>${sm('err',t('o_simerr'))}${sm('conf',t('o_simconf'))}${sm('mm',t('o_simmm'))}</div>
+ <div class="ph"><button class="btn au" data-a="nowsync" ${S.off||S.syncing||!pn?'disabled':''}>${t('o_sync')}</button>${S.syncing?`<progress max="${S.sp[1]}" value="${S.sp[0]}"></progress>`:''}</div>
+ <div class="pn"><h3>${t('o_q')}</h3>${S.sq.length?H([t('i_date'),t('s_no'),t('s_type'),t('pm_st'),''],S.sq.map(x=>`<tr><td>${new Date(x.ts).toLocaleString()}</td><td>${x.ref}</td><td>${t(x.type==='pos'?'s_pos':'s_quick')}</td><td>${chipSync(x.st)}${x.err?`<br><small style="color:var(--er)">${esc(x.err)}</small>`:''}</td><td>${x.st==='failed'?`<button class="lnk" data-a="nowsync">${t('o_retry')}</button>`:x.st==='conflict'?`<button class="lnk" data-a="qacc" data-v="${x.id}">${t('o_accept')}</button> <button class="lnk" data-a="qdis" data-v="${x.id}">${t('o_discard')}</button>`:''}</td></tr>`).join('')):`<p class="sub">${t('o_empty')}</p>`}</div><p class="note">${t('o_idb')}</p></div>`}
+const paysOf=s=>s.pays||(s.m.some(m=>m!=='credit')?[{m:s.m.find(m=>m!=='credit'),a:s.p0,ref:s.m.includes('mm')?'MM-'+s.no.slice(-4):'',st:'confirmed'}]:[]);
+function sales2(){const tabs=`<div class="ph">${segB('stab',[['sales',t('nav').sales],['pay',t('pm_title')]],S.stab)}</div>`;
+ if(S.stab==='pay'){const R=S.sales.flatMap(s=>paysOf(s).filter(p=>p.a>0).map(p=>({d:s.d,inv:s.no,...p}))).concat(S.plog).sort((a,b)=>a.d<b.d?1:-1);
+  return `<div class="pg"><h1>${t('nav').sales}</h1>${tabs}${H([t('e_date'),t('nav').invoices,t('x_pay'),t('e_amt'),t('pm_ref'),t('pm_st')],R.map(p=>`<tr><td>${p.d}</td><td>${p.inv}</td><td>${t('x_'+p.m)}</td><td>${tz2(p.a)}</td><td>${esc(p.ref||'—')}</td><td><span class="chip${p.st==='confirmed'?'':p.st==='failed'?' e':' p'}">${t('pm_'+p.st)}</span></td></tr>`).join(''))}<p class="note">${t('pm_pin')} ${t('pm_card')}</p></div>`}
+ return `<div class="pg"><h1>${t('nav').sales}</h1>${tabs}${S.sales.length?H([t('s_no'),t('i_date'),t('s_type'),t('x_cust'),t('x_tot'),t('x_paid'),t('x_due'),''],S.sales.map(s=>`<tr><td><b>${s.no}</b></td><td>${s.d}</td><td>${t(s.type==='pos'?'s_pos':'s_quick')} · ${s.m.map(m=>t('x_'+m)).join(', ')}</td><td>${esc(s.cust||t('walk'))}</td><td>${tz2(s.tot)}</td><td>${tz2(s.paid)}</td><td>${tz2(s.due)}</td><td><span class="chip${stat(s)==='paid'?'':stat(s)==='part'?' p':' e'}">${t('s_'+stat(s))}</span>${s.sync&&s.sync!=='synced'?' '+chipSync(s.sync):''}</td></tr>`).join('')):`<p class="sub">${t('s_none')}</p>`}</div>`}
+const _pos=pos;
+const posX=()=>{let h=_pos();if(S.off)h=h.replace(/^(<div class="pg[^"]*"[^>]*>)/,`$1<p class="note" role="status" style="margin-top:0">${t('o_banner')}</p>`);return h.replace(t('x_mmn'),t('x_mmn')+' '+t('pm_pin'))};
+const _rc=rcpt;rcpt=function(){let h=_rc();const s=S.rc;return s&&s.sync&&s.sync!=='synced'?h.replace('<hr>',`<hr><div class="rl"><span>${t('o_title')}</span>${chipSync(s.sync)}</div>`):h};
+Object.assign(PG,{sync:syncPage,sales:sales2,pos:posX});
+document.addEventListener('change',e=>{const el=e.target;if(el.dataset.sim){S.sim[el.dataset.sim]=el.checked}
+ if(el.hasAttribute('data-osim')){S.off=el.checked;render();if(!S.off)setTimeout(syncNow,300)}});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;const a=b.dataset.a,v=b.dataset.v;
+ if(a==='gosync'){S.page='sync';S.menu=false;render()}else if(a==='nowsync')syncNow();else if(a==='qacc')resolveQ(v,'acc');else if(a==='qdis')resolveQ(v,'dis');else if(a==='stab'){S.stab=v;render()}});
+addEventListener('offline',()=>{S.off=true;render()});addEventListener('online',()=>{S.off=false;render();syncNow()});
+loadQ().then(()=>{if(S.view==='app')render()});
+</script>
+<script>
+const L8={r_owner:["Mmiliki","Owner"],r_manager:["Meneja wa Biashara","Business Manager"],r_storemgr:["Meneja wa Duka","Store Manager"],r_cashier:["Mhudumu (Cashier)","Cashier"],r_accountant:["Mhasibu","Accountant"],r_invmgr:["Meneja wa Stoo","Inventory Manager"],
+em_invite:["Alika mfanyakazi","Invite employee"],em_role:["Wadhifa","Role"],em_stores:["Maduka","Stores"],em_status:["Hali","Status"],em_active:["Hai","Active"],em_inactive:["Amezimwa","Inactive"],em_invited:["Amealikwa","Invited"],em_toggle:["Washa/zima","Activate/deactivate"],em_sent:["Mwaliko umetumwa","Invitation sent"],
+em_limit:["Umefikia kikomo cha wafanyakazi cha mpango wako.","You reached your plan’s employee limit."],em_prev:["Hakiki kama wadhifa (onyesho la ruhusa)","Preview as role (permission demo)"],em_matrix:["Ruhusa kwa wadhifa","Permissions by role"],em_note:["Ruhusa halisi hutoka backend; UI huficha tu vitendo. Usalama hautegemei UI.","Real permissions come from the backend; the UI only hides actions. Security never relies on the UI."],
+forbid:["Huna ruhusa ya kufungua ukurasa huu.","You do not have permission to open this page."],sb_lock:["Kipengele hiki hakimo kwenye mpango wako.","This feature is not included in your plan."],
+pf_void:["Batilisha ankara","Void invoices"],pf_disc:["Punguzo","Discounts"],
+sb_title:["Usajili","Subscription"],sb_cur:["Mpango wa sasa","Current plan"],sb_stat:["Hali","Status"],sb_active:["Unatumika","Active"],sb_renew:["Tarehe ya kuhuisha","Renewal date"],sb_usage:["Matumizi","Usage"],sb_switch:["Badili mpango (onyesho)","Switch plan (demo)"],sb_feat:["Vipengele vilivyomo","Included features"],
+f_pos:["POS","POS"],f_inventory:["Stoo kamili","Full inventory"],f_barcode:["Barcode","Barcode"],f_multistore:["Maduka mengi","Multi-store"],f_advrep:["Ripoti za kina","Advanced reports"],f_ai:["Vipengele vya AI","AI features"],sb_up:["Maombi ya kubadili mpango yangeenda backend; hapa ni onyesho tu.","A real plan change goes through the backend; this is a demo only."],
+stn_title:["Maduka na Matawi","Stores and Branches"],stn_name:["Jina la duka","Store name"],stn_cmp:["Ulinganisho wa matawi (data ya majaribio)","Branch comparison (mock data)"],stn_note:["Stoo na mauzo halisi kwa kila duka, na uhamisho wa stoo, vitatoka backend.","Real per-store stock and sales, and stock transfers, come from the backend."],
+ns_notif:["Arifa","Notifications"],ns_low:["Bidhaa zinazokaribia kuisha","Low stock alerts"],ns_debt:["Madeni ya zamani","Overdue debts"],ns_sync:["Hitilafu za usawazishaji","Sync errors"],ns_daily:["Muhtasari wa kila siku","Daily summary"],
+ns_dev:["Vifaa","Devices"],ns_this:["Kifaa hiki","This device"],ns_out:["Toa","Sign out"],ns_sec:["Usalama","Security"],ns_pw0:["Nenosiri la sasa","Current password"],ns_pw1:["Nenosiri jipya","New password"],ns_pw2:["Rudia nenosiri jipya","Repeat new password"],ns_chg:["Badili nenosiri","Change password"],ns_mis:["Manenosiri hayalingani","Passwords do not match"],ns_ok:["Nenosiri limebadilishwa (onyesho)","Password changed (demo)"],
+ns_exp:["Jaribu kuisha kwa kipindi cha kuingia","Simulate session expiry"],ns_acct:["Akaunti","Account"],ns_del:["Kufuta akaunti hufanywa kupitia ombi kwenye backend.","Account deletion is a backend request."],ns_links:["Maeneo mengine","More"],ns_demo:["Vitufe vya kuwasha ni vya onyesho; hifadhi halisi itatoka backend.","Toggles are demo only; real storage comes from the backend."],
+sess:["Kipindi chako kimeisha. Tafadhali ingia tena.","Your session expired. Please sign in again."],rs_t:["Weka nenosiri jipya","Set a new password"],rs_open:["Fungua kiungo cha kuweka upya (onyesho)","Open reset link (demo)"],rs_ok:["Nenosiri limebadilishwa. Ingia.","Password updated. Please sign in."]};
+for(const k in L8){T.sw[k]=L8[k][0];T.en[k]=L8[k][1]}
+const RK=['owner','manager','storemgr','cashier','accountant','invmgr'],PK=['dash','pos','catalog','inventory','purchases','sales','customers','finance','reports','ai','employees','stores','subscription','void','discount','settings'];
+const ALL=PK,RP={owner:ALL,manager:ALL.filter(p=>p!=='subscription'),storemgr:['dash','pos','catalog','inventory','purchases','sales','customers','finance','reports','void','discount','settings'],cashier:['dash','pos','sales','customers','settings'],accountant:['dash','sales','customers','finance','reports','ai','settings'],invmgr:['dash','catalog','inventory','purchases','settings']};
+const PM={dash:'dash',pos:'pos',products:'catalog',categories:'catalog',inventory:'inventory',purchases:'purchases',suppliers:'purchases',sales:'sales',invoices:'sales',customers:'customers',debts:'customers',expenses:'finance',cashbook:'finance',reports:'reports',ai:'ai',employees:'employees',stores:'stores',subscription:'subscription',settings:'settings'};
+const FG={pos:'pos',products:'inventory',categories:'inventory',inventory:'inventory',purchases:'inventory',stores:'multistore',ai:'ai'};
+const PLANS={pro:{n:'Business Pro',f:{pos:1,inventory:1,barcode:1,multistore:1,advrep:1,ai:1},lim:{stores:3,emp:10}},book:{n:'Sales Book',f:{pos:0,inventory:0,barcode:0,multistore:0,advrep:0,ai:1},lim:{stores:1,emp:2}}};
+Object.assign(S,{role:'owner',plan:'pro',emp:[{id:1,n:'Neema Joseph',e:'neema@example.com',r:'cashier',st:['s1'],a:'active'},{id:2,n:'Juma Salim',e:'juma@example.com',r:'storemgr',st:['s1','s2'],a:'active'},{id:3,n:'Asha Mushi',e:'asha@example.com',r:'accountant',st:['s1'],a:'inactive'}],
+ ef9:false,ee9:{},nt:{low:true,debt:true,sync:true,daily:false},devs:['Android · Chrome'],sexp:false,pwe:{}});
+const ENT=()=>PLANS[S.plan],can=p=>{const k=PM[p];if(!k)return true;if(!RP[S.role].includes(k))return false;const g=FG[p];return !g||ENT().f[g]||(p==='pos'&&S.d.mode==='quick')},can2=k=>RP[S.role].includes(k);
+const lock=()=>`<div class="pg"><h1>${t('nav')[S.page]}</h1><p class="sub">${RP[S.role].includes(PM[S.page])?t('sb_lock'):t('forbid')}</p>${RP[S.role].includes(PM[S.page])?`<button class="btn au" data-a="nav" data-v="subscription">${t('nav').subscription}</button>`:''}</div>`;
+const rOpt=c=>RK.map(r=>`<option value="${r}" ${c===r?'selected':''}>${t('r_'+r)}</option>`).join('');
+const stChk=(sel,id)=>['s1','s2'].map(s=>`<label style="display:inline-flex;gap:4px;align-items:center;margin-right:10px"><input type="checkbox" data-est="${id}" value="${s}" ${sel.includes(s)?'checked':''} style="width:auto;min-height:0">${esc(stn(s))}</label>`).join('');
+const pl=k=>({void:t('pf_void'),discount:t('pf_disc'),dash:t('nav').dash,pos:t('nav').pos,catalog:t('nav').products,inventory:t('nav').inventory,purchases:t('nav').purchases,sales:t('nav').sales,customers:t('nav').customers,finance:t('nav').cashbook,reports:t('nav').reports,ai:t('nav').ai,employees:t('nav').employees,stores:t('nav').stores,subscription:t('nav').subscription,settings:t('nav').settings})[k];
+function emps(){const lim=ENT().lim.emp,full=S.emp.length>=lim;
+ return `<div class="pg"><div class="ph"><h1>${t('nav').employees}</h1><span class="sp"></span><label style="display:flex;gap:6px;align-items:center;font-size:13px">${t('em_prev')}<select data-role style="width:auto;min-height:36px">${rOpt(S.role)}</select></label><button class="btn au" data-a="emadd" ${full?'disabled':''}>+ ${t('em_invite')}</button></div>${full?`<p class="note">${t('em_limit')}</p>`:''}
+ ${S.ef9?`<div class="pn"><div class="row">${FF('emn',t('v_name'),S.d.emn,'text',S.ee9.n)}${FF('eme',t('email'),S.d.eme,'email',S.ee9.e)}</div><div class="row"><label class="f"><span>${t('em_role')}</span><select name="emr">${rOpt(S.d.emr||'cashier')}</select></label><div class="f"><span>${t('em_stores')}</span>${['s1','s2'].map(s=>`<label style="margin-right:10px"><input type="checkbox" name="ems_${s}" ${(S.d['ems_'+s]===undefined?s==='s1':S.d['ems_'+s])?'checked':''} style="width:auto;min-height:0"> ${esc(stn(s))}</label>`).join('')}</div></div><button class="btn au" data-a="emsave" ${S.busy?'disabled':''}>${S.busy?t('wait'):t('em_invite')}</button></div>`:''}
+ ${H([t('v_name'),t('email'),t('em_role'),t('em_stores'),t('em_status'),''],S.emp.map(m=>`<tr><td>${esc(m.n)}</td><td>${esc(m.e)}</td><td><select data-emr="${m.id}" style="min-height:34px;width:auto">${rOpt(m.r)}</select></td><td>${stChk(m.st,m.id)}</td><td><span class="chip${m.a==='active'?'':m.a==='invited'?' p':' e'}">${t('em_'+m.a)}</span></td><td><button class="lnk" data-a="emtog" data-v="${m.id}">${t('em_toggle')}</button></td></tr>`).join(''))}
+ <div class="pn" style="margin-top:20px"><h3>${t('em_matrix')}</h3>${H([''].concat(RK.map(r=>t('r_'+r))),PK.map(k=>`<tr><td>${pl(k)}</td>${RK.map(r=>`<td>${RP[r].includes(k)?'<span class="ok">✓</span>':'—'}</td>`).join('')}</tr>`).join(''))}</div><p class="note">${t('em_note')}</p></div>`}
+function storesP(){const d=dt0();return `<div class="pg" style="max-width:720px"><h1>${t('stn_title')}</h1>${['s1','s2'].map(s=>`<div class="row" style="align-items:end">${FF(s==='s1'?'sName':'sName2',t('stn_name')+' · '+(s==='s1'?'1':'2'),s==='s1'?S.d.sName||t('mainSt'):S.d.sName2||t('branch'))}<span class="chip" style="margin-bottom:22px;flex:0">${t('em_active')}</span></div>`).join('')}
+ <div class="pn"><h3>${t('stn_cmp')}</h3>${H([t('store'),t('k_sales'),t('k_exp')],['s1','s2'].map(s=>`<tr><td>${esc(stn(s))}</td><td>${tz2(d*SF[s])}</td><td>${tz2(d*SF[s]*.14)}</td></tr>`).join(''))}</div><p class="note">${t('stn_note')}</p></div>`}
+const dt0=()=>185000*PF.month;
+function subs(){const E=ENT(),u=[[t('nav').stores,2,E.lim.stores],[t('nav').employees,S.emp.length,E.lim.emp],[t('nav').products,S.prods.filter(p=>!p.a).length,'∞']];
+ return `<div class="pg" style="max-width:760px"><h1>${t('sb_title')}</h1><div class="kp"><div><small>${t('sb_cur')}</small><b>${E.n}</b></div><div><small>${t('sb_stat')}</small><b class="ok">${t('sb_active')}</b></div><div><small>${t('sb_renew')}</small><b>2026-12-01</b></div></div>
+ <div class="pn"><h3>${t('sb_usage')}</h3>${H(['',t('sb_usage')],u.map(x=>`<tr><td>${x[0]}</td><td>${x[1]} / ${x[2]}</td></tr>`).join(''))}</div>
+ <div class="pn"><h3>${t('sb_feat')}</h3>${H(['','Business Pro','Sales Book'],Object.keys(PLANS.pro.f).map(k=>`<tr><td>${t('f_'+k)}</td>${['pro','book'].map(p=>`<td>${PLANS[p].f[k]?'<span class="ok">✓</span>':'—'}</td>`).join('')}</tr>`).join(''))}</div>
+ <div class="seg">${[['pro','Business Pro'],['book','Sales Book']].map(([k,l])=>`<button data-a="plan" data-v="${k}" aria-pressed="${S.plan===k}">${l}</button>`).join('')}</div><p class="note">${t('sb_up')}</p></div>`}
+function sett2(){const sg=(a,l,c)=>segB(a,l,c);
+ return `<div class="pg" style="max-width:680px"><h1>${t('nav').settings}</h1><div class="pn"><h3>${t('prof')}</h3>${fld('bName',t('bName'))}<div class="sum"><div><span>${t('cur')}</span><b>${esc(S.d.cur)}</b></div><div><span>${t('tz')}</span><b>${esc(S.d.tz)}</b></div><div><span>${t('role')}</span><b>${t('r_'+S.role)}</b></div></div></div>
+ <div class="pn"><h3>${t('mode')}</h3>${sg('mode',[['pos',t('mp')],['quick',t('mq')]],S.d.mode)}<p class="sub" style="margin-top:8px">${t('mnote')}</p></div>
+ <div class="pn"><h3>${t('lang')}</h3>${sg('lang',[['sw','Kiswahili'],['en','English']],S.lang)}</div><div class="pn"><h3>${t('theme')}</h3>${sg('th',[['light',t('light')],['dark',t('dark')],['',t('auto')]],S.theme)}</div>
+ <div class="pn"><h3>${t('ns_notif')}</h3>${[['low','ns_low'],['debt','ns_debt'],['sync','ns_sync'],['daily','ns_daily']].map(([k,l])=>`<label style="display:flex;gap:8px;align-items:center;margin:4px 0"><input type="checkbox" data-nt="${k}" ${S.nt[k]?'checked':''} style="width:auto;min-height:0"> ${t(l)}</label>`).join('')}<p class="note">${t('ns_demo')}</p></div>
+ <div class="pn"><h3>${t('ns_dev')}</h3>${H(['',''],[`<tr><td>${esc(navigator.platform||'Browser')} · ${t('ns_this')}</td><td></td></tr>`,...S.devs.map((d,i)=>`<tr><td>${esc(d)}</td><td><button class="lnk" data-a="devout" data-v="${i}">${t('ns_out')}</button></td></tr>`)].join(''))}</div>
+ <div class="pn"><h3>${t('ns_sec')}</h3>${['pw0','pw1','pw2'].map(n=>`<label class="f${S.pwe[n]?' bad':''}"><span>${t('ns_'+n)}</span><input name="${n}" type="password" value="${esc(S.d[n])}" autocomplete="off">${S.pwe[n]?`<em>${S.pwe[n]}</em>`:''}</label>`).join('')}<button class="btn au" data-a="pwsave" ${S.busy?'disabled':''}>${S.busy?t('wait'):t('ns_chg')}</button> <button class="btn ghost au" data-a="sexp">${t('ns_exp')}</button></div>
+ <div class="pn"><h3>${t('ns_acct')}</h3>${FF('aname',t('name'),S.d.aname||S.d.name||'')}${FF('aemail',t('email'),S.d.aemail||S.d.email||'','email')}<p class="note">${t('ns_del')}</p></div>
+ <div class="pn"><h3>${t('ns_links')}</h3><div class="ph">${[['sync',t('o_title')],['employees',t('nav').employees],['stores',t('nav').stores],['subscription',t('nav').subscription]].map(([p,l])=>`<button class="btn ghost au" data-a="nav" data-v="${p}">${l}</button>`).join('')}</div></div></div>`}
+Object.assign(PG,{employees:emps,stores:storesP,subscription:subs});sett=sett2;
+function rsetForm(){const e=S.err;return `<div class="card"><h1>${t('rs_t')}</h1><p class="sub"></p><form data-f="reset">${fld('password',t('ns_pw1'),'password')}${fld('password2',t('ns_pw2'),'password')}${btn(t('p_save'),'rsub')}</form><p class="alt"><button class="lnk" data-a="go" data-v="login">${t('back')}</button></p></div>`}
+const _a0=auth0;auth0=function(){if(S.view==='reset')return rsetForm();let h=_a0();if(S.view==='login'&&S.sexp)h=h.replace('<form',`<p class="note" role="alert">${t('sess')}</p><form`);if(S.view==='forgot'&&S.sent)h=h.replace('</form>',`</form><button class="lnk" data-a="go" data-v="reset">${t('rs_open')}</button>`);return h};
+const _sub=submit;submit=async function(k){if(k!=='reset')return _sub(k);S.err={};if(!check(['password']))return render();if(S.d.password!==S.d.password2){S.err.password2=t('ns_mis');return render()}
+ S.busy=true;render();await mock(700);S.busy=false;S.d.password='';S.d.password2='';S.view='login';S.sexp=false;render();toast(t('rs_ok'))};
+const _r9=render;render=function(){if(S.view==='app')S.sexp=false;_r9()};
+document.addEventListener('change',e=>{const el=e.target;
+ if(el.name&&el.name.startsWith('ems_'))S.d[el.name]=el.checked?'1':'';
+ if(el.hasAttribute('data-nt')){S.nt[el.dataset.nt]=el.checked}
+ if(el.hasAttribute('data-role')){S.role=el.value;if(!can(S.page))S.page='dash';render()}
+ if(el.hasAttribute('data-emr')){S.emp.find(m=>m.id==el.dataset.emr).r=el.value;toast(t('p_saved'))}
+ if(el.hasAttribute('data-est')){const m=S.emp.find(x=>x.id==el.dataset.est);m.st=el.checked?[...new Set([...m.st,el.value])]:m.st.filter(x=>x!==el.value);if(!m.st.length)m.st=['s1'];render()}});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;const a=b.dataset.a,v=b.dataset.v;
+ if(a==='emadd'){S.ef9=!S.ef9;S.ee9={};render()}
+ else if(a==='emsave'){const n=(S.d.emn||'').trim(),m=(S.d.eme||'').trim(),er={};if(!n)er.n=t('req');if(!/^\S+@\S+\.\S+$/.test(m))er.e=t('bademail');else if(S.emp.some(x=>x.e.toLowerCase()===m.toLowerCase()))er.e=t('p_dup');S.ee9=er;if(Object.keys(er).length)return render();
+  S.busy=true;render();mock(700).then(()=>{S.busy=false;S.emp.push({id:Date.now(),n,e:m,r:S.d.emr||'cashier',st:['s1','s2'].filter(s=>S.d['ems_'+s]===undefined?s==='s1':S.d['ems_'+s]),a:'invited'});S.d.emn='';S.d.eme='';S.ef9=false;toast(t('em_sent'));render()})}
+ else if(a==='emtog'){const m=S.emp.find(x=>x.id==v);m.a=m.a==='active'?'inactive':'active';render()}
+ else if(a==='plan'){S.plan=v;S.d.mode=v==='book'?'quick':'pos';if(!can(S.page))S.page='dash';render()}
+ else if(a==='devout'){S.devs.splice(+v,1);render()}
+ else if(a==='sexp'){S.view='login';S.sexp=true;render()}
+ else if(a==='pwsave'){const e={};if(!S.d.pw0)e.pw0=t('req');if((S.d.pw1||'').length<8)e.pw1=t('minpass');if(S.d.pw1!==S.d.pw2)e.pw2=t('ns_mis');S.pwe=e;if(Object.keys(e).length)return render();S.busy=true;render();mock(700).then(()=>{S.busy=false;S.d.pw0=S.d.pw1=S.d.pw2='';toast(t('ns_ok'));render()})}});
+</script>
+<script>
+const L9={sc_title:["Changanua barcode","Scan barcode"],sc_btn:["Changanua","Scan"],sc_photo:["Piga picha","Take photo"],sc_gal:["Chagua picha","Choose photo"],sc_rm:["Ondoa picha","Remove photo"],sc_cap:["Piga","Capture"],sc_close:["Funga","Close"],
+sc_aim:["Elekeza kamera kwenye barcode. Inasoma yenyewe na unaweza kuendelea kuchanganua.","Point the camera at the barcode. It reads automatically and you can keep scanning."],
+sc_denied:["Kamera imezuiwa au haipatikani. Ruhusu kamera kwenye kivinjari, au piga picha hapa chini.","Camera is blocked or unavailable. Allow camera access in the browser, or use a photo below."],sc_fromph:["Soma barcode kutoka picha","Read barcode from a photo"],
+sc_nodet:["Hakuna barcode iliyoonekana kwenye picha. Jaribu tena.","No barcode found in that photo. Try again."],sc_loading:["Inapakia kamera…","Starting the camera…"],sc_nosup:["Kivinjari hiki hakina kisomaji cha barcode; andika barcode kwa mkono.","This browser has no barcode reader; type the barcode instead."],
+sc_ph:["Picha ya bidhaa","Product photo"],sc_note:["Picha hupunguzwa ukubwa na kuhifadhiwa kwenye kivinjari (IndexedDB).","Photos are resized and stored in the browser (IndexedDB)."],sc_nostock:["Stoo haitoshi","Not enough stock"],sc_reset:["Futa orodha iliyohifadhiwa","Clear saved catalog"],sc_rd:["Imefutwa. Pakia ukurasa upya.","Cleared. Reload the page."]};
+for(const k in L9){T.sw[k]=L9[k][0];T.en[k]=L9[k][1]}
+const SC={stream:null,timer:0,reader:null,mode:'',idx:0,last:'',lt:0};
+const zx=()=>window.ZXing?Promise.resolve():new Promise((ok,no)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';s.onload=ok;s.onerror=no;document.head.appendChild(s)});
+const scm=m=>{const e=$('#scm');if(e)e.textContent=m};
+function beep(){try{const c=new(window.AudioContext||window.webkitAudioContext)(),o=c.createOscillator(),g=c.createGain();o.frequency.value=880;g.gain.value=.1;o.connect(g);g.connect(c.destination);o.start();setTimeout(()=>{o.stop();c.close()},120)}catch(e){}try{navigator.vibrate&&navigator.vibrate(60)}catch(e){}}
+function scanStop(){clearInterval(SC.timer);try{SC.reader&&SC.reader.reset()}catch(e){}SC.reader=null;if(SC.stream)SC.stream.getTracks().forEach(x=>x.stop());SC.stream=null;const o=$('#scan');if(o){o.style.display='none';o.innerHTML=''}}
+function shrink(file){return new Promise(res=>{const u=URL.createObjectURL(file),im=new Image();im.onload=()=>{const r=Math.min(1,480/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*r);c.height=Math.round(im.height*r);c.getContext('2d').drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(u);res(c.toDataURL('image/jpeg',.72))};im.onerror=()=>res('');im.src=u})}
+async function scanOpen(mode,idx){scanStop();Object.assign(SC,{mode,idx:+idx||0,last:'',lt:0});let o=$('#scan');if(!o){o=document.createElement('div');o.id='scan';o.className='rov';document.body.appendChild(o)}
+ const ph=mode==='photo';o.innerHTML=`<div class="rcp scp" role="dialog" aria-label="${t(ph?'sc_photo':'sc_title')}"><h3 style="margin:0 0 8px">${t(ph?'sc_photo':'sc_title')}</h3><div class="vw"><video id="scv" playsinline muted></video>${ph?'':'<div class="ln"></div>'}</div><p id="scm" class="sub" style="margin:8px 0">${t('sc_loading')}</p><div id="scl" style="max-height:90px;overflow:auto"></div>
+ <div class="row" style="gap:8px">${ph?`<button class="btn" id="scc" disabled>${t('sc_cap')}</button>`:''}<label class="btn ghost" id="scf" style="display:none;text-align:center;line-height:48px;cursor:pointer">${t(ph?'sc_gal':'sc_fromph')}<input type="file" accept="image/*" ${ph?'':'capture="environment"'} hidden></label><button class="btn ghost" id="scx">${t('sc_close')}</button></div></div>`;
+ o.style.display='grid';$('#scx').onclick=scanStop;const fi=$('#scf input');fi.onchange=()=>fromFile(fi.files[0]);
+ try{if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw 0;SC.stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});const v=$('#scv');if(!v){scanStop();return}v.srcObject=SC.stream;await v.play()}catch(e){scm(t('sc_denied'));const f=$('#scf');if(f)f.style.display='block';return}
+ if(ph){const c=$('#scc');if(!c)return;c.disabled=false;scm('');c.onclick=()=>{const v=$('#scv'),cv=document.createElement('canvas'),r=Math.min(1,480/Math.max(v.videoWidth,v.videoHeight));cv.width=Math.round(v.videoWidth*r);cv.height=Math.round(v.videoHeight*r);cv.getContext('2d').drawImage(v,0,0,cv.width,cv.height);S.pf.img=cv.toDataURL('image/jpeg',.72);scanStop();render()};return}
+ scm(t('sc_aim'));
+ if('BarcodeDetector' in window){const d=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128','code_39','qr_code']});SC.timer=setInterval(async()=>{try{const v=$('#scv');if(!v)return;const r=await d.detect(v);if(r[0])onScan(r[0].rawValue)}catch(e){}},250)}
+ else{try{scm(t('sc_loading'));await zx();SC.reader=new ZXing.BrowserMultiFormatReader();scm(t('sc_aim'));SC.reader.decodeFromStream(SC.stream,$('#scv'),r=>{if(r)onScan(r.getText())})}catch(e){scm(t('sc_nosup'));const f=$('#scf');if(f)f.style.display='block'}}}
+async function fromFile(file){if(!file)return;if(SC.mode==='photo'){S.pf.img=await shrink(file);scanStop();render();return}
+ scm(t('sc_loading'));let code='';try{if('BarcodeDetector' in window){const r=await new BarcodeDetector().detect(await createImageBitmap(file));code=r[0]&&r[0].rawValue}else{await zx();const u=URL.createObjectURL(file),r=await new ZXing.BrowserMultiFormatReader().decodeFromImageUrl(u);code=r.getText()}}catch(e){}
+ code?onScan(code,true):scm(t('sc_nodet'))}
+function onScan(code,once){const n=Date.now();if(code===SC.last&&n-SC.lt<1500)return;SC.last=code;SC.lt=n;beep();
+ if(SC.mode==='form'){if(S.pf)S.pf.vs[SC.idx].bc=code;scanStop();render();toast(code);return}
+ const r=allRows().find(x=>x.v.bc===code),l=$('#scl');
+ if(r){const b=S.cart.reduce((a,x)=>a+x.q,0);addCart(r.v.id);const ok=S.cart.reduce((a,x)=>a+x.q,0)>b;if(l)l.insertAdjacentHTML('afterbegin',`<div class="rl"><span>${ok?'✓':'✕'} ${esc((r.p.n+' '+r.v.l).trim())}</span><span>${ok?tz2(r.v.sell):t('sc_nostock')}</span></div>`);S.unk=''}
+ else{S.unk=code;render();scm(t('x_unk')+' '+code)}
+ if(once)scanStop()}
+const photoBlock=()=>`<div class="f"><span>${t('sc_ph')}</span><div class="ph2">${S.pf.img?`<img src="${S.pf.img}" class="pv" alt="">`:`<div class="pv e">📷</div>`}<div class="pcs"><button type="button" class="btn ghost au" data-a="phcam">📷 ${t('sc_photo')}</button><label class="btn ghost au" style="line-height:48px;cursor:pointer">${t('sc_gal')}<input type="file" accept="image/*" hidden data-ph></label>${S.pf.img?`<button type="button" class="lnk" data-a="phrm">${t('sc_rm')}</button>`:''}</div></div><small style="color:var(--mu)">${t('sc_note')}</small></div>`;
+let ct=0;const saveCat=()=>{clearTimeout(ct);ct=setTimeout(()=>idb(s=>s.put(JSON.stringify({prods:S.prods,cats:S.cats}),'cat')),600)};
+const loadCat=()=>idb((s,res)=>{const g=s.get('cat');g.onsuccess=()=>{try{const d=JSON.parse(g.result||'null');if(d&&d.prods&&d.cats){S.prods=d.prods;S.cats=d.cats}}catch(e){}res()}});
+const _r10=render;render=function(){_r10();if(S.view==='app')saveCat()};
+const _sy=PG.sync;PG.sync=()=>_sy().replace(/<\/div>$/,`<button class="btn ghost au" data-a="rstcat">${t('sc_reset')}</button></div>`);
+document.addEventListener('change',async e=>{const el=e.target;if(el.hasAttribute('data-ph')&&el.files[0]&&S.pf){S.pf.img=await shrink(el.files[0]);render()}});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;const a=b.dataset.a,v=b.dataset.v;
+ if(a==='scan')scanOpen('pos');else if(a==='scanf')scanOpen('form',v);else if(a==='phcam')scanOpen('photo');else if(a==='phrm'){S.pf.img='';render()}
+ else if(a==='rstcat')idb(s=>s.delete('cat')).then(()=>toast(t('sc_rd')));
+ if(a==='nav'||a==='back2')scanStop()});
+loadCat().then(()=>{if(S.view==='app')render()});
+</script>
+<script>
+Object.assign(T.sw,{rs_title:"Ongeza mzigo mpya",rs_qty:"Idadi iliyoletwa",rs_cur:"Stoo ya sasa",rs_after:"Stoo baada ya kuongeza",rs_buy:"Bei ya kununua (si lazima kubadili)",rs_sell:"Bei ya kuuza (si lazima kubadili)",rs_more:"Hariri maelezo mengine",rs_btn:"+ Mzigo",rs_ok:"Mzigo umeongezwa",m_restock:"Mzigo mpya"});
+Object.assign(T.en,{rs_title:"Receive new stock",rs_qty:"Quantity received",rs_cur:"Current stock",rs_after:"Stock after adding",rs_buy:"Purchase price (change only if needed)",rs_sell:"Selling price (change only if needed)",rs_more:"Edit other details",rs_btn:"+ Stock",rs_ok:"Stock added",m_restock:"New stock"});
+S.rsn=0;
+const rsB=v=>(can2('inventory')||can2('catalog'))?`<button class="lnk" data-a="rst" data-v="${v.id}" aria-label="${t('rs_title')}">${t('rs_btn')}</button>`:'';
+function rsClose(){const o=$('#rsd');if(o){o.style.display='none';o.innerHTML=''}}
+function rsOpen(vid){const r=allRows().find(x=>x.v.id==vid);if(!r||!(can2('inventory')||can2('catalog')))return;let o=$('#rsd');if(!o){o=document.createElement('div');o.id='rsd';o.className='rov';document.body.appendChild(o)}
+ const v=r.v,nm=(r.p.n+' '+v.l).trim();
+ o.innerHTML=`<div class="rcp" style="font-family:inherit;width:min(420px,100%)" role="dialog" aria-label="${t('rs_title')}"><h3 style="margin:0 0 4px">${t('rs_title')}</h3><p class="sub" style="margin:0 0 12px"><b>${esc(nm)}</b> · ${t('rs_cur')}: <b>${v.st}</b></p>
+ <label class="f"><span>${t('rs_qty')}</span><input id="rsq" type="number" min="1" inputmode="numeric"></label><p id="rsa" class="sub" style="margin:-8px 0 12px"></p>
+ <div class="row"><label class="f"><span>${t('rs_buy')}</span><input id="rsb" type="number" min="0" value="${v.buy}"></label><label class="f"><span>${t('rs_sell')}</span><input id="rss" type="number" min="0" value="${v.sell}"></label></div><p id="rse" style="color:var(--er);margin:0 0 8px"></p>
+ <div class="row" style="gap:8px"><button class="btn ghost" id="rsx">${t('p_cancel')}</button><button class="btn" id="rsv">${t('p_save')}</button></div><button class="lnk" id="rsm" style="margin-top:8px">${t('rs_more')}</button></div>`;
+ o.style.display='grid';const q=$('#rsq');q.focus();
+ q.oninput=()=>{$('#rsa').textContent=+q.value>0?`${t('rs_after')}: ${v.st+parseInt(q.value,10)}`:''};
+ $('#rsx').onclick=rsClose;$('#rsm').onclick=()=>{rsClose();S.page='products';S.pf=JSON.parse(JSON.stringify(r.p));S.pe={};render()};
+ $('#rsv').onclick=async()=>{const n=parseInt(q.value,10),b=$('#rsb').value,s=$('#rss').value,er=$('#rse');
+  if(!(n>0)||!(+s>0)||b===''||+b<0){er.textContent=t('p_pos');return}
+  $('#rsv').disabled=true;$('#rsv').textContent=t('wait');await mock(600);
+  v.st+=n;if(+b!==v.buy)v.buy=+b;if(+s!==v.sell)v.sell=+s;S.rsn++;
+  S.mov.unshift({d:nowD(),p:nm,t:'restock',q:n,r:'RST-'+String(S.rsn).padStart(4,'0'),u:S.d.name||'Owner'});
+  rsClose();toast(t('rs_ok')+': +'+n);render()}}
+document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;if(b.dataset.a==='rst')rsOpen(b.dataset.v);if(b.dataset.a==='nav')rsClose()});
+</script>
+</body>
+</html>
