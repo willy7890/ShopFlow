@@ -11,6 +11,9 @@ from app.core.database import get_db
 from app.core.dependencies import get_business_membership, get_current_user
 from app.modules.auth.models import User
 from app.modules.businesses.models import Membership
+from app.modules.customers.models import Customer, CustomerLedgerEntry
+from app.modules.finance.models import CashbookEntry
+from app.modules.inventory.models import Purchase, Supplier, SupplierPayment
 from app.modules.sales.router import create_sale
 from app.modules.sales.schemas import SaleCreate
 from app.modules.sync.models import SyncDevice, SyncOperation
@@ -59,6 +62,19 @@ def _get_or_create_device(
 def _normalize_sync_item(item: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(item, dict):
         raise HTTPException(status_code=422, detail="Each sync item must be a JSON object.")
+    entity_type = item.get("entity_type", "sale")
+    if entity_type != "sale":
+        if entity_type not in {"customer", "supplier", "customer_ledger", "supplier_ledger", "cashbook_entry"}:
+            raise HTTPException(status_code=422, detail=f"Unsupported sync entity type: {entity_type}.")
+        normalized = dict(item)
+        normalized["entity_type"] = entity_type
+        normalized["client_id"] = normalized.get("client_id") or normalized.get("clientId") or normalized.get("idempotency_key")
+        if not normalized["client_id"]:
+            raise HTTPException(status_code=422, detail="Each sync item requires a client_id or clientId.")
+        normalized["idempotency_key"] = normalized.get("idempotency_key") or normalized["client_id"]
+        if not normalized.get("store_id"):
+            raise HTTPException(status_code=422, detail="Each sync item requires a store_id.")
+        return normalized
     if "items" not in item and "payments" not in item:
         raise HTTPException(status_code=422, detail="Sync payload is missing an item list.")
     normalized = dict(item)
@@ -66,7 +82,7 @@ def _normalize_sync_item(item: dict[str, Any]) -> dict[str, Any]:
     if not normalized["client_id"]:
         raise HTTPException(status_code=422, detail="Each sync item requires a client_id or clientId.")
     normalized["idempotency_key"] = normalized.get("idempotency_key") or normalized["client_id"]
-    normalized["customer_name"] = normalized.get("customer_name") or normalized.get("customer")
+    normalized["customer_name"] = normalized.get("customer_name") or normalized.get("customerName") or normalized.get("customer")
     normalized["customer_phone"] = normalized.get("customer_phone")
     normalized["note"] = normalized.get("note") or normalized.get("description")
     if not normalized.get("items"):
@@ -93,7 +109,7 @@ def _normalize_sync_item(item: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(payment, dict):
             raise HTTPException(status_code=422, detail="Each payment must be an object.")
         method = payment.get("method")
-        amount = payment.get("amount")
+        amount = payment.get("amount") if payment.get("amount") is not None else payment.get("amountMinor")
         if method is None or amount is None:
             raise HTTPException(status_code=422, detail="Every payment requires a method and amount.")
         normalized_payment = {"method": method, "amount": str(amount)}
@@ -103,7 +119,193 @@ def _normalize_sync_item(item: dict[str, Any]) -> dict[str, Any]:
             normalized_payment["note"] = str(payment["note"])
         normalized_payments.append(normalized_payment)
     normalized["payments"] = normalized_payments
+    normalized["entity_type"] = "sale"
     return normalized
+
+
+def _sync_datetime(value: Any) -> datetime:
+    if not value:
+        return datetime.now(timezone.utc)
+    if not isinstance(value, str):
+        raise HTTPException(status_code=422, detail="Sync timestamps must be ISO-8601 strings.")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Sync timestamp is invalid.") from exc
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _apply_sync_record(
+    entity_type: str,
+    item: dict[str, Any],
+    membership: Membership,
+    current_user: User,
+    db: Session,
+) -> str:
+    from app.modules.businesses.models import Store
+
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == str(item["store_id"]),
+            Store.business_id == membership.business_id,
+            Store.is_active.is_(True),
+        )
+        .first()
+    )
+    if not store or (membership.role != "owner" and store.id not in (membership.store_access or [])):
+        raise HTTPException(status_code=403, detail="You do not have access to this sync item's store.")
+    created_at = _sync_datetime(item.get("createdAt") or item.get("created_at"))
+    entity_id = str(item.get("entryId") or item.get("id") or "")
+
+    if entity_type == "customer":
+        if membership.role not in {"owner", "business_manager", "sales_manager", "cashier", "accountant"}:
+            raise HTTPException(status_code=403, detail="You do not have permission to sync customers.")
+        name = str(item.get("name") or "").strip()
+        phone = str(item.get("phone") or "").strip() or None
+        if not entity_id or not 1 <= len(name) <= 180 or (phone and len(phone) > 32):
+            raise HTTPException(status_code=422, detail="Customer sync details are invalid.")
+        if db.query(Customer).filter(Customer.id == entity_id, Customer.business_id == membership.business_id).first():
+            return "Customer already exists."
+        customer = Customer(
+            id=entity_id,
+            business_id=membership.business_id,
+            name=name,
+            phone=phone,
+            created_by=current_user.id,
+            created_at=created_at,
+        )
+        db.add(customer)
+        db.flush()
+        return "Customer synced."
+
+    if entity_type == "supplier":
+        if membership.role not in {"owner", "business_manager", "inventory_manager"}:
+            raise HTTPException(status_code=403, detail="You do not have permission to sync suppliers.")
+        name = str(item.get("name") or "").strip()
+        phone = str(item.get("phone") or "").strip() or None
+        if not entity_id or not 1 <= len(name) <= 180 or (phone and len(phone) > 32):
+            raise HTTPException(status_code=422, detail="Supplier sync details are invalid.")
+        if db.query(Supplier).filter(Supplier.id == entity_id, Supplier.business_id == membership.business_id).first():
+            return "Supplier already exists."
+        db.add(Supplier(
+            id=entity_id,
+            business_id=membership.business_id,
+            name=name,
+            phone=phone,
+            created_at=created_at,
+        ))
+        db.flush()
+        return "Supplier synced."
+
+    if entity_type == "customer_ledger":
+        if membership.role not in {"owner", "business_manager", "sales_manager", "cashier", "accountant"}:
+            raise HTTPException(status_code=403, detail="You do not have permission to sync customer payments.")
+        customer_id = str(item.get("customerId") or item.get("customer_id") or "")
+        customer = db.query(Customer).filter(
+            Customer.id == customer_id,
+            Customer.business_id == membership.business_id,
+            Customer.is_active.is_(True),
+        ).first()
+        amount = _safe_decimal(item.get("amountMinor"))
+        if not entity_id or not customer or amount <= 0:
+            raise HTTPException(status_code=422, detail="Customer payment sync details are invalid.")
+        if db.query(CustomerLedgerEntry).filter(CustomerLedgerEntry.id == entity_id).first():
+            return "Customer ledger entry already exists."
+        db.add(CustomerLedgerEntry(
+            id=entity_id,
+            business_id=membership.business_id,
+            customer_id=customer.id,
+            kind="payment",
+            amount=-amount,
+            description="Offline customer payment",
+            reference=entity_id,
+            note=str(item.get("note") or "")[:500] or None,
+            created_by=current_user.id,
+            created_at=created_at,
+        ))
+        db.flush()
+        return "Customer payment synced."
+
+    if entity_type == "supplier_ledger":
+        if membership.role not in {"owner", "business_manager", "store_manager", "inventory_manager", "accountant"}:
+            raise HTTPException(status_code=403, detail="You do not have permission to sync supplier accounts.")
+        supplier_id = str(item.get("supplierId") or item.get("supplier_id") or "")
+        supplier = db.query(Supplier).filter(
+            Supplier.id == supplier_id,
+            Supplier.business_id == membership.business_id,
+        ).first()
+        amount = _safe_decimal(item.get("amountMinor"))
+        entry_type = item.get("entryType")
+        if not entity_id or not supplier or amount <= 0 or entry_type not in {"bill", "payment"}:
+            raise HTTPException(status_code=422, detail="Supplier ledger sync details are invalid.")
+        if entry_type == "bill":
+            if db.query(Purchase).filter(Purchase.id == entity_id, Purchase.business_id == membership.business_id).first():
+                return "Supplier bill already exists."
+            db.add(Purchase(
+                id=entity_id,
+                business_id=membership.business_id,
+                store_id=store.id,
+                supplier_id=supplier.id,
+                reference_number=entity_id,
+                status="draft",
+                total_amount=amount,
+                note=str(item.get("note") or "Offline supplier bill")[:500],
+                created_by=current_user.id,
+                created_at=created_at,
+            ))
+            db.flush()
+            return "Supplier bill synced without receiving stock."
+        if db.query(SupplierPayment).filter(SupplierPayment.id == entity_id, SupplierPayment.business_id == membership.business_id).first():
+            return "Supplier payment already exists."
+        db.add(SupplierPayment(
+            id=entity_id,
+            business_id=membership.business_id,
+            store_id=store.id,
+            supplier_id=supplier.id,
+            amount=amount,
+            method="cash",
+            note=str(item.get("note") or "")[:500] or None,
+            status="posted",
+            created_by=current_user.id,
+            created_at=created_at,
+        ))
+        db.flush()
+        return "Supplier payment synced."
+
+    if entity_type == "cashbook_entry":
+        if membership.role not in {"owner", "business_manager", "store_manager", "sales_manager", "cashier", "accountant"}:
+            raise HTTPException(status_code=403, detail="You do not have permission to sync cashbook entries.")
+        direction = item.get("entryType")
+        amount = _safe_decimal(item.get("amountMinor"))
+        if not entity_id or direction not in {"income", "expense"} or amount <= 0:
+            raise HTTPException(status_code=422, detail="Cashbook sync details are invalid.")
+        if db.query(CashbookEntry).filter(CashbookEntry.id == entity_id, CashbookEntry.business_id == membership.business_id).first():
+            return "Cashbook entry already exists."
+        source = item.get("source")
+        entry_type = {
+            "sale": "sale_receipt",
+            "customer_collection": "customer_payment",
+            "supplier_payment": "supplier_payment",
+        }.get(source, direction)
+        db.add(CashbookEntry(
+            id=entity_id,
+            business_id=membership.business_id,
+            store_id=store.id,
+            entry_type=entry_type,
+            direction="in" if direction == "income" else "out",
+            amount=amount,
+            category=str(item.get("category") or "general")[:50],
+            reference_type=str(source or "offline")[:40],
+            reference_id=str(item.get("referenceId") or entity_id)[:36],
+            note=str(item.get("note") or "")[:500] or None,
+            created_by=current_user.id,
+            created_at=created_at,
+        ))
+        db.flush()
+        return "Cashbook entry synced."
+
+    raise HTTPException(status_code=422, detail=f"Unsupported sync entity type: {entity_type}.")
 
 
 @router.post("/devices", response_model=SyncDeviceOut, status_code=status.HTTP_201_CREATED)
@@ -188,6 +390,7 @@ def push_sync_items(
             raise HTTPException(status_code=422, detail="Each sync payload must be an object.")
         normalized = _normalize_sync_item(item)
         client_id = str(normalized["client_id"])
+        entity_type = str(normalized.get("entity_type", "sale"))
         duplicate = (
             db.query(SyncOperation)
             .filter(
@@ -196,60 +399,70 @@ def push_sync_items(
             )
             .first()
         )
-        if duplicate:
+        if duplicate and duplicate.status != "failed":
             results.append(SyncPushResult(client_id=client_id, state=duplicate.status, message=duplicate.result_message or duplicate.error_message))
             continue
 
-        operation = SyncOperation(
-            business_id=membership.business_id,
-            user_id=current_user.id,
-            device_id=device.id,
-            entity_type="sale",
-            operation_name="create_sale",
-            idempotency_key=client_id,
-            payload=normalized,
-            status="pending",
-            attempts=0,
-            result_message=None,
-            error_message=None,
-        )
-        db.add(operation)
-        db.flush()
+        if duplicate:
+            operation = duplicate
+            operation.status = "pending"
+            operation.error_message = None
+            operation.attempts += 1
+        else:
+            operation = SyncOperation(
+                business_id=membership.business_id,
+                user_id=current_user.id,
+                device_id=device.id,
+                entity_type=entity_type,
+                operation_name=f"create_{entity_type}",
+                idempotency_key=client_id,
+                payload=normalized,
+                status="pending",
+                attempts=0,
+                result_message=None,
+                error_message=None,
+            )
+            db.add(operation)
+            db.flush()
 
         try:
-            sale_payload = SaleCreate(
-                store_id=str(normalized["store_id"]),
-                customer_id=normalized.get("customer_id"),
-                customer_name=normalized.get("customer_name"),
-                customer_phone=normalized.get("customer_phone"),
-                note=normalized.get("note"),
-                idempotency_key=client_id,
-                items=[
-                    {
-                        "variant_id": line["variant_id"],
-                        "quantity": _safe_decimal(line["quantity"]),
-                        "unit_price": _safe_decimal(line["unit_price"]) if line.get("unit_price") is not None else None,
-                    }
-                    for line in normalized["items"]
-                ],
-                payments=[
-                    {
-                        "method": payment["method"],
-                        "amount": _safe_decimal(payment["amount"]),
-                        "reference": payment.get("reference"),
-                        "note": payment.get("note"),
-                    }
-                    for payment in normalized["payments"]
-                ],
-            )
-            sale = create_sale(
-                payload=sale_payload,
-                membership=membership,
-                db=db,
-                current_user=current_user,
-            )
+            if entity_type == "sale":
+                sale_payload = SaleCreate(
+                    store_id=str(normalized["store_id"]),
+                    customer_id=normalized.get("customer_id"),
+                    customer_name=normalized.get("customer_name"),
+                    customer_phone=normalized.get("customer_phone"),
+                    note=normalized.get("note"),
+                    idempotency_key=client_id,
+                    items=[
+                        {
+                            "variant_id": line["variant_id"],
+                            "quantity": _safe_decimal(line["quantity"]),
+                            "unit_price": _safe_decimal(line["unit_price"]) if line.get("unit_price") is not None else None,
+                        }
+                        for line in normalized["items"]
+                    ],
+                    payments=[
+                        {
+                            "method": payment["method"],
+                            "amount": _safe_decimal(payment["amount"]),
+                            "reference": payment.get("reference"),
+                            "note": payment.get("note"),
+                        }
+                        for payment in normalized["payments"]
+                    ],
+                )
+                sale = create_sale(
+                    payload=sale_payload,
+                    membership=membership,
+                    db=db,
+                    current_user=current_user,
+                )
+                message = sale.sale_number if hasattr(sale, "sale_number") else "synced"
+            else:
+                message = _apply_sync_record(entity_type, normalized, membership, current_user, db)
             operation.status = "synced"
-            operation.result_message = sale.sale_number if hasattr(sale, "sale_number") else "synced"
+            operation.result_message = message
             operation.error_message = None
             db.commit()
             results.append(SyncPushResult(client_id=client_id, state="synced", message=operation.result_message))
