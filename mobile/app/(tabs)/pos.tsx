@@ -6,6 +6,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { Button, Card, Field, LoadingState, PageTitle, Screen } from '@/src/components/NativeUi'
 import { BarcodeScanner } from '@/src/components/BarcodeScanner'
 import { formatTzs, multiplyMoney, parseTzsAmount } from '@/src/domain/money'
+import { listCustomers, type CustomerAccount } from '@/src/repositories/accounts'
 import { createCashSale } from '@/src/repositories/sales'
 import { findProductByBarcode, listProducts, type LocalProduct } from '@/src/repositories/catalog'
 import { getActiveWorkspace, type Workspace } from '@/src/repositories/workspace'
@@ -21,6 +22,9 @@ export default function PosScreen() {
   const router = useRouter()
   const [workspace, setWorkspace] = useState<Workspace | null>(null)
   const [products, setProducts] = useState<LocalProduct[]>([])
+  const [customers, setCustomers] = useState<CustomerAccount[]>([])
+  const [canSell, setCanSell] = useState(false)
+  const [customerId, setCustomerId] = useState<string | null>(null)
   const [cart, setCart] = useState<Record<string, number>>({})
   const [cashTendered, setCashTendered] = useState('')
   const [barcode, setBarcode] = useState('')
@@ -35,9 +39,27 @@ export default function PosScreen() {
     setLoading(true)
     setError(null)
     try {
-    const current = await getActiveWorkspace(database)
-    setWorkspace(current)
-    setProducts(current ? await listProducts(database, current) : [])
+      const current = await getActiveWorkspace(database)
+      setWorkspace(current)
+      const allowedToSell = current
+        ? current.role === 'owner' || Boolean(await database.getFirstAsync<{ allowed: number }>(
+          `SELECT 1 AS allowed FROM user_store_permissions
+           WHERE business_id = ? AND store_id = ? AND user_id = ? AND permission = 'sell'`,
+          current.businessId,
+          current.storeId,
+          current.userId,
+        ))
+        : false
+      const [availableProducts, availableCustomers] = current
+        ? await Promise.all([
+          listProducts(database, current),
+          allowedToSell ? listCustomers(database, current) : Promise.resolve([]),
+        ])
+        : [[], []]
+      setCanSell(allowedToSell)
+      setProducts(availableProducts)
+      setCustomers(availableCustomers)
+      setCustomerId((selectedId) => availableCustomers.some((customer) => customer.id === selectedId) ? selectedId : null)
     } finally {
       setLoading(false)
     }
@@ -54,6 +76,7 @@ export default function PosScreen() {
     (sum, product) => sum + multiplyMoney(product.sellPriceMinor, cart[product.variantId] ?? 0),
     0,
   ), [cart, selected])
+  const tenderedMinor = parseTzsAmount(cashTendered)
 
   const changeQuantity = (product: LocalProduct, increment: number) => {
     const current = cart[product.variantId] ?? 0
@@ -114,14 +137,23 @@ export default function PosScreen() {
           quantity: cart[product.variantId] ?? 0,
         })),
         cashTenderedMinor: tendered,
+        ...(customerId ? { customerId } : {}),
       }, () => Crypto.randomUUID())
-      setReceipt(t('pos.saleSaved', {
-        number: result.saleNumber,
-        total: formatTzs(result.totalMinor, language),
-        change: formatTzs(result.changeMinor, language),
-      }))
+      setReceipt(result.balanceDueMinor > 0
+        ? t('pos.creditSaleSaved', {
+          number: result.saleNumber,
+          total: formatTzs(result.totalMinor, language),
+          paid: formatTzs(result.totalMinor - result.balanceDueMinor, language),
+          due: formatTzs(result.balanceDueMinor, language),
+        })
+        : t('pos.saleSaved', {
+          number: result.saleNumber,
+          total: formatTzs(result.totalMinor, language),
+          change: formatTzs(result.changeMinor, language),
+        }))
       setCart({})
       setCashTendered('')
+      setCustomerId(null)
       await load()
     } catch (reason) {
       setError(localizeError(reason, 'pos.saleError'))
@@ -215,9 +247,41 @@ export default function PosScreen() {
           <Text style={styles.totalLabel}>{t('pos.total')}</Text>
           <Text style={styles.totalAmount}>{formatTzs(totalMinor, language)}</Text>
         </View>
+        {canSell ? (
+        <>
+        <Text style={styles.fieldLabel}>{t('pos.customer')}</Text>
+        <View style={styles.customerChoices}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ selected: customerId === null }}
+            onPress={() => setCustomerId(null)}
+            style={[styles.customerChoice, customerId === null && styles.customerSelected]}
+          >
+            <Text style={styles.customerChoiceText}>{t('pos.cashSale')}</Text>
+          </Pressable>
+          {customers.map((customer) => (
+            <Pressable
+              key={customer.id}
+              accessibilityRole="button"
+              accessibilityState={{ selected: customerId === customer.id }}
+              onPress={() => setCustomerId((current) => current === customer.id ? null : customer.id)}
+              style={[styles.customerChoice, customerId === customer.id && styles.customerSelected]}
+            >
+              <Text style={styles.customerChoiceText}>{customer.name}</Text>
+            </Pressable>
+          ))}
+          {customers.length === 0 ? (
+            <Button label={t('accounts.addCustomer')} secondary onPress={() => router.push('/accounts')} />
+          ) : null}
+        </View>
+        </>
+        ) : null}
         <Field label={t('pos.cashReceived')} value={cashTendered} onChangeText={setCashTendered} keyboardType="number-pad" />
-        {parseTzsAmount(cashTendered) !== null && parseTzsAmount(cashTendered)! >= totalMinor && totalMinor > 0 ? (
-          <Text style={styles.change}>{t('pos.change', { amount: formatTzs(parseTzsAmount(cashTendered)! - totalMinor, language) })}</Text>
+        {tenderedMinor !== null && tenderedMinor >= totalMinor && totalMinor > 0 ? (
+          <Text style={styles.change}>{t('pos.change', { amount: formatTzs(tenderedMinor - totalMinor, language) })}</Text>
+        ) : null}
+        {customerId && tenderedMinor !== null && tenderedMinor < totalMinor && totalMinor > 0 ? (
+          <Text style={styles.due}>{t('pos.creditDue', { amount: formatTzs(totalMinor - tenderedMinor, language) })}</Text>
         ) : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {receipt ? <Text style={styles.success}>{receipt}</Text> : null}
@@ -254,7 +318,13 @@ function createStyles(colors: ThemeColors) {
     totalRow: { alignItems: 'center', borderTopColor: colors.border, borderTopWidth: 1, flexDirection: 'row', justifyContent: 'space-between', paddingTop: 12 },
     totalLabel: { color: colors.text, fontSize: 16, fontWeight: '700' },
     totalAmount: { color: colors.text, fontSize: 20, fontWeight: '800' },
+    fieldLabel: { color: colors.text, fontSize: 14, fontWeight: '600' },
+    customerChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    customerChoice: { backgroundColor: colors.surfaceMuted, borderColor: colors.border, borderRadius: 16, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9 },
+    customerSelected: { backgroundColor: colors.accentSurface, borderColor: colors.accent },
+    customerChoiceText: { color: colors.text, fontSize: 13, fontWeight: '600' },
     change: { color: colors.success, fontSize: 14, fontWeight: '600' },
+    due: { color: colors.danger, fontSize: 14, fontWeight: '600' },
     error: { color: colors.danger, fontSize: 14 },
     success: { color: colors.success, fontSize: 14, fontWeight: '600' },
     empty: { gap: 14 },

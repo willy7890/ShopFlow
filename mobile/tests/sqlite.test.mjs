@@ -18,6 +18,15 @@ import {
 import { adjustStock, listRecentMovements } from '../src/repositories/inventory.ts'
 import { createCashSale, getSalesSummary } from '../src/repositories/sales.ts'
 import {
+  createCustomer,
+  createSupplier,
+  listCustomers,
+  listSuppliers,
+  recordCustomerPayment,
+  recordSupplierBill,
+  recordSupplierPayment,
+} from '../src/repositories/accounts.ts'
+import {
   assertPermission,
   activateRemoteWorkspace,
   authenticateUser,
@@ -70,7 +79,7 @@ test('SQLite migrations, offline sale persistence and stock rollback are consist
   try {
     await migrateDatabase(database)
     await migrateDatabase(database)
-    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 4)
+    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 5)
 
     const workspace = await createWorkspace(database, {
       ownerName: 'Asha Mushi',
@@ -301,6 +310,95 @@ test('SQLite migrations, offline sale persistence and stock rollback are consist
   }
 })
 
+test('customer debts and supplier payables are isolated, balanced and atomic', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'shopflow-accounts-test-'))
+  const database = openTestDatabase(join(directory, 'shopflow.db'))
+  try {
+    await migrateDatabase(database)
+    const workspace = await createWorkspace(database, {
+      ownerName: 'Accounts User',
+      ownerUsername: 'accounts',
+      ownerPassword: 'a-local-password',
+      businessName: 'Accounts Shop',
+      storeName: 'Main Store',
+    }, randomUUID)
+    await createProduct(database, workspace, {
+      name: 'Rice',
+      sku: 'RICE-1',
+      unitCode: 'kg',
+      costPriceMinor: 600,
+      sellPriceMinor: 1000,
+      initialQuantity: 5,
+      lowStockThreshold: 1,
+    }, randomUUID)
+    const [product] = await listProducts(database, workspace)
+    await createCustomer(database, workspace, { name: 'Neema' }, randomUUID)
+    await createSupplier(database, workspace, { name: 'Grain Supplier' }, randomUUID)
+    const [customer] = await listCustomers(database, workspace)
+    const [supplier] = await listSuppliers(database, workspace)
+
+    await assert.rejects(createCashSale(database, workspace, {
+      items: [{ variantId: product.variantId, quantity: 1 }],
+      cashTenderedMinor: 300,
+    }, randomUUID), /Select a customer to record the unpaid sale balance/)
+    assert.equal((await listProducts(database, workspace))[0].quantity, 5)
+
+    await database.execAsync(`
+      CREATE TRIGGER reject_customer_debt BEFORE INSERT ON customer_ledger
+      BEGIN SELECT RAISE(ABORT, 'customer ledger rejected'); END;
+    `)
+    await assert.rejects(createCashSale(database, workspace, {
+      items: [{ variantId: product.variantId, quantity: 1 }],
+      cashTenderedMinor: 300,
+      customerId: customer.id,
+    }, randomUUID), /customer ledger rejected/)
+    assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM sales')).count, 0)
+    assert.equal((await listProducts(database, workspace))[0].quantity, 5)
+    await database.execAsync('DROP TRIGGER reject_customer_debt')
+
+    const sale = await createCashSale(database, workspace, {
+      items: [{ variantId: product.variantId, quantity: 1 }],
+      cashTenderedMinor: 300,
+      customerId: customer.id,
+    }, randomUUID)
+    assert.equal(sale.totalMinor, 1000)
+    assert.equal(sale.changeMinor, 0)
+    assert.equal(sale.balanceDueMinor, 700)
+    const savedSale = await database.getFirstAsync(
+      'SELECT customer_name_snapshot AS customerName, paid_minor AS paid, balance_due_minor AS due FROM sales WHERE id = ?',
+      sale.saleId,
+    )
+    assert.deepEqual({ ...savedSale }, { customerName: 'Neema', paid: 300, due: 700 })
+    assert.equal((await database.getFirstAsync('SELECT amount_minor AS amount FROM payments WHERE sale_id = ?', sale.saleId)).amount, 300)
+    assert.equal((await listCustomers(database, workspace))[0].balanceMinor, 700)
+
+    await assert.rejects(recordCustomerPayment(database, workspace, customer.id, 701, '', randomUUID), /cannot exceed the outstanding balance/)
+    await recordCustomerPayment(database, workspace, customer.id, 200, 'Part payment', randomUUID)
+    assert.equal((await listCustomers(database, workspace))[0].balanceMinor, 500)
+
+    const originalStock = (await listProducts(database, workspace))[0].quantity
+    await recordSupplierBill(database, workspace, supplier.id, 800, 'Flour delivery invoice', randomUUID)
+    assert.equal((await listSuppliers(database, workspace))[0].balanceMinor, 800)
+    assert.equal((await listProducts(database, workspace))[0].quantity, originalStock)
+    await assert.rejects(recordSupplierPayment(database, workspace, supplier.id, 801, '', randomUUID), /cannot exceed the outstanding balance/)
+    await recordSupplierPayment(database, workspace, supplier.id, 300, '', randomUUID)
+    assert.equal((await listSuppliers(database, workspace))[0].balanceMinor, 500)
+
+    await createStore(database, workspace, { name: 'Second Store', code: 'SECOND' }, randomUUID)
+    const secondStore = (await listStores(database, workspace)).find((store) => store.code === 'SECOND')
+    assert.ok(secondStore)
+    await switchStore(database, workspace, secondStore.id)
+    const secondWorkspace = await getActiveWorkspace(database)
+    assert.ok(secondWorkspace)
+    assert.equal((await listCustomers(database, secondWorkspace))[0].balanceMinor, 0)
+    assert.equal((await listSuppliers(database, secondWorkspace))[0].balanceMinor, 0)
+    assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM outbox')).count, 6)
+  } finally {
+    database.close()
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
 test('local sales insights and notifications summarize low stock and sell-through trends', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'shopflow-insights-test-'))
   const databasePath = join(directory, 'shopflow.db')
@@ -386,6 +484,14 @@ test('version 1 local business data upgrades in place and persists the default l
         category_id TEXT REFERENCES categories(id) ON DELETE SET NULL, name TEXT NOT NULL,
         is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL
       );
+      CREATE TABLE product_variants (
+        id TEXT PRIMARY KEY NOT NULL, business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+        product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        label TEXT NOT NULL, sku TEXT NOT NULL, unit_code TEXT NOT NULL DEFAULT 'pcs',
+        cost_price_minor INTEGER NOT NULL, sell_price_minor INTEGER NOT NULL,
+        low_stock_threshold INTEGER NOT NULL DEFAULT 0, track_stock INTEGER NOT NULL DEFAULT 1,
+        is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, UNIQUE (business_id, sku)
+      );
       CREATE TABLE stock_movements (
         id TEXT PRIMARY KEY NOT NULL, business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
         store_id TEXT NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
@@ -393,11 +499,49 @@ test('version 1 local business data upgrades in place and persists the default l
         unit_cost_minor INTEGER NOT NULL DEFAULT 0, reference_type TEXT, reference_id TEXT,
         actor_id TEXT, created_at TEXT NOT NULL
       );
+      CREATE TABLE sales (
+        id TEXT PRIMARY KEY NOT NULL, business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+        store_id TEXT NOT NULL REFERENCES stores(id) ON DELETE RESTRICT,
+        actor_id TEXT REFERENCES users(id) ON DELETE SET NULL, sale_number TEXT NOT NULL,
+        subtotal_minor INTEGER NOT NULL, discount_minor INTEGER NOT NULL DEFAULT 0,
+        total_minor INTEGER NOT NULL, cash_tendered_minor INTEGER NOT NULL,
+        change_minor INTEGER NOT NULL, sync_state TEXT NOT NULL DEFAULT 'pending',
+        created_at TEXT NOT NULL, UNIQUE (business_id, sale_number)
+      );
+      CREATE TABLE sale_items (
+        id TEXT PRIMARY KEY NOT NULL, sale_id TEXT NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
+        variant_id TEXT REFERENCES product_variants(id) ON DELETE SET NULL,
+        product_name_snapshot TEXT NOT NULL, variant_name_snapshot TEXT NOT NULL,
+        sku_snapshot TEXT NOT NULL, quantity INTEGER NOT NULL,
+        unit_price_minor INTEGER NOT NULL, line_total_minor INTEGER NOT NULL
+      );
+      CREATE TABLE payments (
+        id TEXT PRIMARY KEY NOT NULL, business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+        store_id TEXT NOT NULL REFERENCES stores(id) ON DELETE RESTRICT,
+        sale_id TEXT NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
+        method TEXT NOT NULL, amount_minor INTEGER NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL
+      );
       INSERT INTO businesses (id, name, created_at) VALUES ('business-v1', 'Existing Shop', '2025-01-01');
       INSERT INTO stores (id, business_id, name, code, created_at)
         VALUES ('store-v1', 'business-v1', 'Original Store', 'MAIN', '2025-01-01');
       INSERT INTO users (id, business_id, display_name, role, created_at)
         VALUES ('owner-v1', 'business-v1', 'Existing Owner', 'owner', '2025-01-01');
+      INSERT INTO products (id, business_id, name, created_at)
+        VALUES ('product-v1', 'business-v1', 'Legacy Product', '2025-01-01');
+      INSERT INTO product_variants
+        (id, business_id, product_id, label, sku, cost_price_minor, sell_price_minor, created_at)
+        VALUES ('variant-v1', 'business-v1', 'product-v1', 'Default', 'LEGACY-1', 100, 200, '2025-01-01');
+      INSERT INTO sales
+        (id, business_id, store_id, actor_id, sale_number, subtotal_minor, total_minor,
+         cash_tendered_minor, change_minor, created_at)
+        VALUES ('sale-v1', 'business-v1', 'store-v1', 'owner-v1', 'S-LEGACY', 200, 200, 200, 0, '2025-01-01');
+      INSERT INTO sale_items
+        (id, sale_id, variant_id, product_name_snapshot, variant_name_snapshot, sku_snapshot,
+         quantity, unit_price_minor, line_total_minor)
+        VALUES ('item-v1', 'sale-v1', 'variant-v1', 'Legacy Product', 'Default', 'LEGACY-1', 1, 200, 200);
+      INSERT INTO payments
+        (id, business_id, store_id, sale_id, method, amount_minor, status, created_at)
+        VALUES ('payment-v1', 'business-v1', 'store-v1', 'sale-v1', 'cash', 200, 'confirmed', '2025-01-01');
       INSERT INTO app_settings (setting_key, setting_value)
         VALUES ('active_business_id', 'business-v1');
       PRAGMA user_version = 1;
@@ -405,7 +549,7 @@ test('version 1 local business data upgrades in place and persists the default l
 
     await migrateDatabase(database)
     await migrateDatabase(database)
-    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 4)
+    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 5)
     assert.equal((await database.getFirstAsync('SELECT name FROM businesses WHERE id = ?', 'business-v1')).name, 'Existing Shop')
     assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM user_store_permissions')).count, 8)
     assert.equal((await getActiveWorkspace(database)).userId, 'owner-v1')
@@ -415,6 +559,12 @@ test('version 1 local business data upgrades in place and persists the default l
     assert.equal((await database.getFirstAsync(
       "SELECT setting_value FROM app_settings WHERE setting_key = 'language'",
     )).setting_value, 'en')
+    assert.deepEqual({ ...await database.getFirstAsync(
+      'SELECT paid_minor AS paid, balance_due_minor AS due FROM sales WHERE id = ?',
+      'sale-v1',
+    ) }, { paid: 200, due: 0 })
+    assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM sale_items WHERE sale_id = ?', 'sale-v1')).count, 1)
+    assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM payments WHERE sale_id = ?', 'sale-v1')).count, 1)
   } finally {
     database.close()
     rmSync(directory, { recursive: true, force: true })

@@ -20,6 +20,7 @@ export interface CashSaleResult {
   saleNumber: string
   totalMinor: number
   changeMinor: number
+  balanceDueMinor: number
 }
 
 export async function createCashSale(
@@ -36,12 +37,25 @@ export async function createCashSale(
   const saleNumber = `S-${saleId.slice(0, 8).toUpperCase()}`
   const saleItemIds = parsed.data.items.map(() => createId())
   const paymentId = createId()
+  const debtEntryId = createId()
   const outboxId = createId()
   const now = new Date().toISOString()
   let totalMinor = 0
+  let customerName: string | null = null
+  let paidMinor = 0
+  let balanceDueMinor = 0
 
   await database.withExclusiveTransactionAsync(async (transaction) => {
     const products: SaleProduct[] = []
+    if (parsed.data.customerId) {
+      const customer = await transaction.getFirstAsync<{ name: string }>(
+        'SELECT name FROM customers WHERE id = ? AND business_id = ?',
+        parsed.data.customerId ?? null,
+        workspace.businessId,
+      )
+      if (!customer) throw new Error('The selected customer is not available in this business.')
+      customerName = customer.name
+    }
 
     for (const item of parsed.data.items) {
       const product = await transaction.getFirstAsync<SaleProduct>(
@@ -78,19 +92,22 @@ export async function createCashSale(
       products.push(product)
     }
 
-    if (parsed.data.cashTenderedMinor < totalMinor) {
-      throw new Error('Cash received must cover the sale total.')
-    }
     if (!Number.isSafeInteger(parsed.data.cashTenderedMinor)) {
       throw new Error('Cash received is too large to represent safely.')
     }
+    if (parsed.data.cashTenderedMinor < totalMinor && !parsed.data.customerId) {
+      throw new Error('Select a customer to record the unpaid sale balance.')
+    }
 
-    const changeMinor = parsed.data.cashTenderedMinor - totalMinor
+    paidMinor = Math.min(parsed.data.cashTenderedMinor, totalMinor)
+    balanceDueMinor = totalMinor - paidMinor
+    const changeMinor = Math.max(parsed.data.cashTenderedMinor - totalMinor, 0)
     await transaction.runAsync(
       `INSERT INTO sales
          (id, business_id, store_id, actor_id, sale_number, subtotal_minor, discount_minor, total_minor,
-          cash_tendered_minor, change_minor, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
+          cash_tendered_minor, change_minor, created_at, customer_id, customer_name_snapshot,
+          paid_minor, balance_due_minor)
+       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
       saleId,
       workspace.businessId,
       workspace.storeId,
@@ -101,6 +118,10 @@ export async function createCashSale(
       parsed.data.cashTenderedMinor,
       changeMinor,
       now,
+      parsed.data.customerId ?? null,
+      customerName,
+      paidMinor,
+      balanceDueMinor,
     )
 
     for (const [index, item] of parsed.data.items.entries()) {
@@ -157,14 +178,32 @@ export async function createCashSale(
 
     await transaction.runAsync(
       `INSERT INTO payments (id, business_id, store_id, sale_id, method, amount_minor, status, created_at)
-       VALUES (?, ?, ?, ?, 'cash', ?, 'confirmed', ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       paymentId,
       workspace.businessId,
       workspace.storeId,
       saleId,
-      totalMinor,
+      paidMinor > 0 ? 'cash' : 'credit',
+      paidMinor,
+      paidMinor > 0 ? 'confirmed' : 'credit',
       now,
     )
+
+    if (balanceDueMinor > 0) {
+      await transaction.runAsync(
+        `INSERT INTO customer_ledger
+           (id, business_id, store_id, customer_id, entry_type, amount_minor, sale_id, actor_id, created_at)
+         VALUES (?, ?, ?, ?, 'debt', ?, ?, ?, ?)`,
+        debtEntryId,
+        workspace.businessId,
+        workspace.storeId,
+        parsed.data.customerId ?? null,
+        balanceDueMinor,
+        saleId,
+        workspace.userId,
+        now,
+      )
+    }
 
     const payloadItems = parsed.data.items.map((item, index) => {
       const product = products[index]
@@ -186,9 +225,13 @@ export async function createCashSale(
       storeId: workspace.storeId,
       actorId: workspace.userId,
       totalMinor,
+      customerId: parsed.data.customerId ?? null,
+      customerName,
+      paidMinor,
+      balanceDueMinor,
       cashTenderedMinor: parsed.data.cashTenderedMinor,
       changeMinor,
-      payments: [{ method: 'cash', amountMinor: totalMinor, status: 'confirmed' }],
+      payments: [{ method: paidMinor > 0 ? 'cash' : 'credit', amountMinor: paidMinor, status: paidMinor > 0 ? 'confirmed' : 'credit' }],
       items: payloadItems,
       createdAt: now,
     })
@@ -209,7 +252,8 @@ export async function createCashSale(
     saleId,
     saleNumber,
     totalMinor,
-    changeMinor: parsed.data.cashTenderedMinor - totalMinor,
+    changeMinor: Math.max(parsed.data.cashTenderedMinor - totalMinor, 0),
+    balanceDueMinor,
   }
 }
 

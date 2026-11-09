@@ -272,6 +272,9 @@ export default function ManagementScreen() {
   return (
     <Screen>
       <PageTitle title={t('management.title')} subtitle={t('management.subtitle', { name: workspace.userName, role: translateRole(language, workspace.role) })} />
+      {allowedPermissions.includes('sell') || allowedPermissions.includes('manage_inventory') ? (
+        <Button label={t('accounts.open')} secondary onPress={() => router.push('/accounts')} />
+      ) : null}
 
       {allowedPermissions.includes('manage_business') ? <Card>
         <Text style={styles.sectionTitle}>{t('management.businessDetails')}</Text>
