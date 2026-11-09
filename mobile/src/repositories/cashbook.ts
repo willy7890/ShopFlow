@@ -27,24 +27,35 @@ export interface LocalReport {
   topProducts: Array<{ name: string; quantity: number; totalMinor: number }>
 }
 
+export interface CashbookTotals {
+  incomeMinor: number
+  expenseMinor: number
+}
+
+export async function getCashbookTotals(
+  database: SQLiteDatabase,
+  workspace: Workspace,
+): Promise<CashbookTotals> {
+  await assertActiveWorkspace(database, workspace)
+  await assertCashbookPermission(database, workspace)
+  const totals = await database.getFirstAsync<CashbookTotals>(
+    `SELECT
+       COALESCE(SUM(CASE WHEN entry_type = 'income' THEN amount_minor ELSE 0 END), 0) AS incomeMinor,
+       COALESCE(SUM(CASE WHEN entry_type = 'expense' THEN amount_minor ELSE 0 END), 0) AS expenseMinor
+     FROM cashbook_entries
+     WHERE business_id = ? AND store_id = ?`,
+    workspace.businessId,
+    workspace.storeId,
+  )
+  return totals ?? { incomeMinor: 0, expenseMinor: 0 }
+}
+
 export async function listCashbookEntries(
   database: SQLiteDatabase,
   workspace: Workspace,
 ): Promise<CashbookEntry[]> {
   await assertActiveWorkspace(database, workspace)
-  const allowed = await database.getFirstAsync<{ allowed: number }>(
-    `SELECT 1 AS allowed
-     FROM user_store_permissions
-     WHERE business_id = ? AND store_id = ? AND user_id = ?
-       AND permission IN ('sell', 'manage_inventory', 'view_reports')
-     LIMIT 1`,
-    workspace.businessId,
-    workspace.storeId,
-    workspace.userId,
-  )
-  if (workspace.role !== 'owner' && !allowed) {
-    throw new Error('You do not have permission to view cashbook entries in the selected store.')
-  }
+  await assertCashbookPermission(database, workspace)
   return database.getAllAsync<CashbookEntry>(
     `SELECT id, entry_type AS entryType, source, category, amount_minor AS amountMinor,
        note, created_at AS createdAt
@@ -55,6 +66,26 @@ export async function listCashbookEntries(
     workspace.businessId,
     workspace.storeId,
   )
+}
+
+async function assertCashbookPermission(
+  database: SQLiteDatabase,
+  workspace: Workspace,
+): Promise<void> {
+  if (workspace.role === 'owner') return
+  const allowed = await database.getFirstAsync<{ allowed: number }>(
+    `SELECT 1 AS allowed
+     FROM user_store_permissions
+     WHERE business_id = ? AND store_id = ? AND user_id = ?
+       AND permission IN ('sell', 'manage_inventory', 'view_reports')
+     LIMIT 1`,
+    workspace.businessId,
+    workspace.storeId,
+    workspace.userId,
+  )
+  if (!allowed) {
+    throw new Error('You do not have permission to view cashbook entries in the selected store.')
+  }
 }
 
 export async function createManualCashbookEntry(

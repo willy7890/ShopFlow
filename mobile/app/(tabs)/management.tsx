@@ -275,6 +275,12 @@ export default function ManagementScreen() {
       {allowedPermissions.includes('sell') || allowedPermissions.includes('manage_inventory') ? (
         <Button label={t('accounts.open')} secondary onPress={() => router.push('/accounts')} />
       ) : null}
+      {allowedPermissions.includes('sell') || allowedPermissions.includes('manage_inventory') || allowedPermissions.includes('view_reports') ? (
+        <Button label={t('cashbook.open')} secondary onPress={() => router.push('/cashbook')} />
+      ) : null}
+      {allowedPermissions.includes('view_reports') ? (
+        <Button label={t('reports.open')} secondary onPress={() => router.push('/reports')} />
+      ) : null}
 
       {allowedPermissions.includes('manage_business') ? <Card>
         <Text style={styles.sectionTitle}>{t('management.businessDetails')}</Text>
