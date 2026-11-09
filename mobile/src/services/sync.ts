@@ -18,12 +18,13 @@ export interface SyncSummary {
   synced: number
   failed: number
   pending: number
+  failureMessage: string | null
 }
 
 let syncInProgress: Promise<SyncSummary> | null = null
 
-function deviceSettingKey(businessId: string): string {
-  return `sync_device_id:${businessId}`
+function deviceSettingKey(businessId: string, userId: string): string {
+  return `sync_device_id:${businessId}:${userId}`
 }
 
 export async function syncWorkspaceOutbox(
@@ -54,7 +55,7 @@ async function performSync(
     'SELECT id FROM stores WHERE business_id = ? AND is_active = 1',
     workspace.businessId,
   )
-  await downloadRemoteCatalog(database, workspace.businessId, stores.map((store) => store.id))
+  await downloadRemoteCatalog(database, workspace.businessId, stores.map((store) => store.id), false)
   const rows = await database.getAllAsync<OutboxRow>(
     `SELECT client_id, entity_type, entity_id, payload_json
      FROM outbox
@@ -70,7 +71,7 @@ async function performSync(
      LIMIT 100`,
     workspace.businessId,
   )
-  if (rows.length === 0) return { synced: 0, failed: 0, pending: 0 }
+  if (rows.length === 0) return { synced: 0, failed: 0, pending: 0, failureMessage: null }
 
   const items = rows.map((row) => {
     const payload = JSON.parse(row.payload_json) as Record<string, unknown>
@@ -82,7 +83,7 @@ async function performSync(
       store_id: payload.store_id ?? payload.storeId,
     }
   })
-  const deviceId = await getOrRegisterDevice(database, workspace.businessId)
+  const deviceId = await getOrRegisterDevice(database, workspace.businessId, workspace.userId)
   await database.withExclusiveTransactionAsync(async (transaction) => {
     for (const row of rows) {
       await transaction.runAsync(
@@ -99,9 +100,12 @@ async function performSync(
     results = await pushItems(database, workspace.businessId, deviceId.id, items)
   } catch (reason) {
     if (reason instanceof ApiError && reason.status === 404) {
-      await database.runAsync('DELETE FROM app_settings WHERE setting_key = ?', deviceSettingKey(workspace.businessId))
+      await database.runAsync(
+        'DELETE FROM app_settings WHERE setting_key = ?',
+        deviceSettingKey(workspace.businessId, workspace.userId),
+      )
       try {
-        const replacement = await getOrRegisterDevice(database, workspace.businessId)
+        const replacement = await getOrRegisterDevice(database, workspace.businessId, workspace.userId)
         results = await pushItems(database, workspace.businessId, replacement.id, items)
       } catch (retryError) {
         await markBatchFailed(database, rows, workspace.businessId, retryError)
@@ -147,14 +151,21 @@ async function performSync(
      WHERE business_id = ? AND status IN ('pending', 'in_progress')`,
     workspace.businessId,
   )
-  return { synced, failed, pending: Number(remaining?.count ?? 0) }
+  const failureMessage = results.find((result) => result.state !== 'synced')?.message ?? null
+  return {
+    synced,
+    failed,
+    pending: Number(remaining?.count ?? 0),
+    failureMessage: failureMessage?.slice(0, 240) ?? null,
+  }
 }
 
 async function getOrRegisterDevice(
   database: SQLiteDatabase,
   businessId: string,
+  userId: string,
 ): Promise<RegisteredDevice> {
-  const settingKey = deviceSettingKey(businessId)
+  const settingKey = deviceSettingKey(businessId, userId)
   const stored = await database.getFirstAsync<{ setting_value: string }>(
     'SELECT setting_value FROM app_settings WHERE setting_key = ?',
     settingKey,

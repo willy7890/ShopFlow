@@ -53,6 +53,7 @@ export async function downloadRemoteCatalog(
   database: SQLiteDatabase,
   businessId: string,
   storeIds: string[],
+  updateCatalog = true,
 ): Promise<void> {
   const context = { businessId }
   const [categories, units, products, stockByStore] = await Promise.all([
@@ -113,66 +114,72 @@ export async function downloadRemoteCatalog(
       }
     }
 
-    for (const category of categories) {
-      await transaction.runAsync(
-        `INSERT INTO categories (id, business_id, name, created_at)
-         VALUES (?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET name = excluded.name`,
-        category.id,
-        businessId,
-        category.name,
-        now,
-      )
+    if (updateCatalog) {
+      for (const category of categories) {
+        await transaction.runAsync(
+          `INSERT INTO categories (id, business_id, name, created_at)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET name = excluded.name`,
+          category.id,
+          businessId,
+          category.name,
+          now,
+        )
+      }
     }
 
     for (const product of activeProducts) {
       const categoryId = product.category_id && categories.some((category) => category.id === product.category_id)
         ? product.category_id
         : null
-      await transaction.runAsync(
-        `INSERT INTO products (id, business_id, category_id, name, barcode, is_active, created_at)
-         VALUES (?, ?, ?, ?, NULL, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET
-           category_id = excluded.category_id, name = excluded.name, is_active = excluded.is_active`,
-        product.id,
-        businessId,
-        categoryId,
-        product.name,
-        1,
-        now,
-      )
-      for (const variant of productVariants.get(product.id) ?? []) {
-        const unitCode = unitCodes.get(variant.unit_id)
-        if (!unitCode) throw new Error(`Catalog unit ${variant.unit_id} is missing; refresh the business catalog and retry.`)
-        const costPrice = wholeValue(variant.purchase_price, `${product.name} cost price`)
-        const sellPrice = wholeValue(variant.selling_price, `${product.name} selling price`)
-        const lowStockThreshold = wholeValue(variant.low_stock_threshold, `${product.name} low-stock threshold`)
+      if (updateCatalog) {
         await transaction.runAsync(
-          `INSERT INTO product_variants
-             (id, business_id, product_id, label, sku, unit_code, cost_price_minor,
-              sell_price_minor, low_stock_threshold, track_stock, is_active, barcode, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `INSERT INTO products (id, business_id, category_id, name, barcode, is_active, created_at)
+           VALUES (?, ?, ?, ?, NULL, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
-             label = excluded.label, sku = excluded.sku, unit_code = excluded.unit_code,
-             cost_price_minor = excluded.cost_price_minor,
-             sell_price_minor = excluded.sell_price_minor,
-             low_stock_threshold = excluded.low_stock_threshold,
-             track_stock = excluded.track_stock, is_active = excluded.is_active,
-             barcode = excluded.barcode`,
-          variant.id,
-          businessId,
+             category_id = excluded.category_id, name = excluded.name, is_active = excluded.is_active`,
           product.id,
-          variant.name,
-          variant.sku,
-          unitCode,
-          costPrice,
-          sellPrice,
-          lowStockThreshold,
-          variant.track_stock ? 1 : 0,
+          businessId,
+          categoryId,
+          product.name,
           1,
-          variant.barcode,
           now,
         )
+      }
+      for (const variant of productVariants.get(product.id) ?? []) {
+        if (updateCatalog) {
+          const unitCode = unitCodes.get(variant.unit_id)
+          if (!unitCode) throw new Error(`Catalog unit ${variant.unit_id} is missing; refresh the business catalog and retry.`)
+          const costPrice = wholeValue(variant.purchase_price, `${product.name} cost price`)
+          const sellPrice = wholeValue(variant.selling_price, `${product.name} selling price`)
+          const lowStockThreshold = wholeValue(variant.low_stock_threshold, `${product.name} low-stock threshold`)
+          await transaction.runAsync(
+            `INSERT INTO product_variants
+               (id, business_id, product_id, label, sku, unit_code, cost_price_minor,
+                sell_price_minor, low_stock_threshold, track_stock, is_active, barcode, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET
+               label = excluded.label, sku = excluded.sku, unit_code = excluded.unit_code,
+               cost_price_minor = excluded.cost_price_minor,
+               sell_price_minor = excluded.sell_price_minor,
+               low_stock_threshold = excluded.low_stock_threshold,
+               track_stock = excluded.track_stock, is_active = excluded.is_active,
+               barcode = excluded.barcode`,
+            variant.id,
+            businessId,
+            product.id,
+            variant.name,
+            variant.sku,
+            unitCode,
+            costPrice,
+            sellPrice,
+            lowStockThreshold,
+            variant.track_stock ? 1 : 0,
+            1,
+            variant.barcode,
+            now,
+          )
+        }
         for (const storeId of storeIds) {
           const serverQuantity = wholeValue(
             stockMaps.get(storeId)?.get(variant.id) ?? 0,

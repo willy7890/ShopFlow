@@ -5,6 +5,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -235,6 +236,11 @@ def _apply_sync_record(
             created_at=created_at,
         ))
         db.flush()
+        customer.outstanding_balance = Decimal(str(
+            db.query(func.coalesce(func.sum(CustomerLedgerEntry.amount), Decimal("0")))
+            .filter(CustomerLedgerEntry.customer_id == customer.id)
+            .scalar()
+        ))
         return "Customer payment synced."
 
     if entity_type == "supplier_ledger":

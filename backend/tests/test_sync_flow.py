@@ -248,6 +248,12 @@ def test_offline_sync_pushes_accounts_and_cashbook_idempotently_without_receivin
     assert history.status_code == 200, history.text
     assert len(history.json()) == 1
     assert float(history.json()[0]["amount"]) == -500
+    customer_statement = client.get(
+        f"/api/v1/customers/{customer_id}/statement",
+        headers=headers,
+    )
+    assert customer_statement.status_code == 200, customer_statement.text
+    assert float(customer_statement.json()["outstanding_balance"]) == -500
 
 
 def test_failed_sync_operation_can_be_retried_with_the_same_client_id():
