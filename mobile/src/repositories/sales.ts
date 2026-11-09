@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite'
 import { multiplyMoney } from '../domain/money.ts'
 import { cashSaleInput, type CashSaleInput } from '../domain/validation.ts'
+import { writeCashbookEntry } from './cashbook.ts'
 import type { Workspace } from './workspace.ts'
 import { assertActiveWorkspace, assertPermission } from './workspace.ts'
 
@@ -203,6 +204,16 @@ export async function createCashSale(
         workspace.userId,
         now,
       )
+    }
+    if (paidMinor > 0) {
+      await writeCashbookEntry(transaction, workspace, {
+        entryType: 'income',
+        source: 'sale',
+        category: 'Sale',
+        amountMinor: paidMinor,
+        referenceId: saleId,
+        createdAt: now,
+      }, createId)
     }
 
     const payloadItems = parsed.data.items.map((item, index) => {

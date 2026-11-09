@@ -1,5 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite'
 import { accountInput } from '../domain/validation.ts'
+import { writeCashbookEntry } from './cashbook.ts'
 import type { Workspace } from './workspace.ts'
 import { assertActiveWorkspace, assertPermission } from './workspace.ts'
 
@@ -124,6 +125,15 @@ export async function recordCustomerPayment(
       note: cleanNote,
       createdAt: now,
     }, now)
+    await writeCashbookEntry(transaction, workspace, {
+      entryType: 'income',
+      source: 'customer_collection',
+      category: 'Customer collection',
+      amountMinor,
+      note: cleanNote,
+      referenceId: entryId,
+      createdAt: now,
+    }, createId)
   })
 }
 
@@ -268,6 +278,15 @@ export async function recordSupplierPayment(
       note: cleanNote,
       createdAt: now,
     }, now)
+    await writeCashbookEntry(transaction, workspace, {
+      entryType: 'expense',
+      source: 'supplier_payment',
+      category: 'Supplier payment',
+      amountMinor,
+      note: cleanNote,
+      referenceId: entryId,
+      createdAt: now,
+    }, createId)
   })
 }
 

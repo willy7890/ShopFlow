@@ -16,11 +16,15 @@ export function BarcodeScanner({ visible, onClose, onScanned }: BarcodeScannerPr
   const { t } = useI18n()
   const [permission, requestPermission] = useCameraPermissions()
   const [error, setError] = useState<string | null>(null)
+  const [torchEnabled, setTorchEnabled] = useState(false)
+  const [cameraReady, setCameraReady] = useState(false)
   const scanned = useRef(false)
 
   useEffect(() => {
     if (visible) {
       scanned.current = false
+      setCameraReady(false)
+      setTorchEnabled(false)
       setError(null)
     }
   }, [visible])
@@ -44,17 +48,48 @@ export function BarcodeScanner({ visible, onClose, onScanned }: BarcodeScannerPr
           </Pressable>
         </View>
         {permission?.granted ? (
-          <CameraView
-            style={styles.camera}
-            facing="back"
-            barcodeScannerSettings={{ barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'itf14'] }}
-            onBarcodeScanned={({ data }) => {
-              if (scanned.current) return
-              scanned.current = true
-              onScanned(data)
-            }}
-            onMountError={() => setError(t('pos.cameraUnavailable'))}
-          />
+          <>
+            <View style={styles.preview}>
+              <CameraView
+                style={StyleSheet.absoluteFill}
+                facing="back"
+                enableTorch={torchEnabled}
+                barcodeScannerSettings={{
+                  barcodeTypes: [
+                    'ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'code39',
+                    'code93', 'codabar', 'itf14', 'qr', 'pdf417', 'aztec', 'datamatrix',
+                  ],
+                }}
+                onCameraReady={() => setCameraReady(true)}
+                onBarcodeScanned={({ data }) => {
+                  if (scanned.current || !data.trim()) return
+                  scanned.current = true
+                  onScanned(data.trim())
+                }}
+                onMountError={() => setError(t('pos.cameraUnavailable'))}
+              />
+              <View pointerEvents="none" style={styles.scanGuide}>
+                <View style={[styles.scanFrame, { borderColor: colors.accent }]}>
+                  <View style={[styles.scanLine, { backgroundColor: colors.accent }]} />
+                </View>
+                <Text style={styles.guideText}>{t('pos.scanAim')}</Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t(torchEnabled ? 'pos.torchOff' : 'pos.torchOn')}
+                accessibilityState={{ selected: torchEnabled }}
+                onPress={() => setTorchEnabled((enabled) => !enabled)}
+                style={[styles.torchButton, { backgroundColor: colors.surface }]}
+              >
+                <Text style={[styles.torchText, { color: colors.text }]}>
+                  {t(torchEnabled ? 'pos.torchOff' : 'pos.torchOn')}
+                </Text>
+              </Pressable>
+            </View>
+            <Text style={[styles.scanStatus, { color: colors.muted }]}>
+              {cameraReady ? t('pos.scanReady') : t('pos.scanStarting')}
+            </Text>
+          </>
         ) : (
           <View style={styles.permission}>
             <Text style={[styles.message, { color: colors.text }]}>{t('pos.cameraPermission')}</Text>
@@ -73,7 +108,14 @@ const styles = StyleSheet.create({
   title: { fontSize: 20, fontWeight: '700' },
   close: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 8 },
   closeText: { fontSize: 15, fontWeight: '600' },
-  camera: { borderRadius: 16, flex: 1, overflow: 'hidden' },
+  preview: { borderRadius: 16, flex: 1, overflow: 'hidden' },
+  scanGuide: { alignItems: 'center', bottom: 56, justifyContent: 'center', left: 0, position: 'absolute', right: 0, top: 0 },
+  scanFrame: { alignItems: 'center', borderRadius: 16, borderWidth: 3, height: 150, justifyContent: 'center', width: '84%' },
+  scanLine: { height: 2, opacity: 0.9, width: '100%' },
+  guideText: { backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 8, color: '#FFFFFF', fontSize: 14, fontWeight: '600', marginTop: 16, overflow: 'hidden', paddingHorizontal: 12, paddingVertical: 8, textAlign: 'center' },
+  torchButton: { alignSelf: 'center', borderRadius: 20, bottom: 12, minHeight: 42, justifyContent: 'center', paddingHorizontal: 18, position: 'absolute' },
+  torchText: { fontSize: 14, fontWeight: '700' },
+  scanStatus: { fontSize: 13, paddingTop: 10, textAlign: 'center' },
   permission: { alignItems: 'center', flex: 1, gap: 20, justifyContent: 'center' },
   message: { fontSize: 16, textAlign: 'center' },
   error: { fontSize: 14, marginTop: 12, textAlign: 'center' },
