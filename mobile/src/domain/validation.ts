@@ -57,6 +57,12 @@ export const cashSaleInput = z.object({
     'A product can only appear once in the cart.',
   ),
   cashTenderedMinor: z.number().int().safe().nonnegative('Enter a valid cash amount.'),
+  customerId: z.string().uuid().optional(),
+})
+
+export const accountInput = z.object({
+  name: z.string().trim().min(2, 'Enter a name.').max(160, 'Name must be at most 160 characters.'),
+  phone: z.string().trim().max(40, 'Phone number must be at most 40 characters.').optional(),
 })
 
 export type WorkspaceInput = z.infer<typeof workspaceInput>

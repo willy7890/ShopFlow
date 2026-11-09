@@ -217,6 +217,115 @@ const PHASE_FOUR_SCHEMA = `
 INSERT OR IGNORE INTO app_settings (setting_key, setting_value) VALUES ('language', 'en');
 `
 
+const PHASE_FIVE_SCHEMA = `
+CREATE TABLE customers (
+  id TEXT PRIMARY KEY NOT NULL,
+  business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  phone TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE suppliers (
+  id TEXT PRIMARY KEY NOT NULL,
+  business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  phone TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+
+ALTER TABLE sales RENAME TO sales_old;
+ALTER TABLE sale_items RENAME TO sale_items_old;
+ALTER TABLE payments RENAME TO payments_old;
+
+CREATE TABLE sales (
+  id TEXT PRIMARY KEY NOT NULL,
+  business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  store_id TEXT NOT NULL REFERENCES stores(id) ON DELETE RESTRICT,
+  actor_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  sale_number TEXT NOT NULL,
+  subtotal_minor INTEGER NOT NULL CHECK (subtotal_minor >= 0),
+  discount_minor INTEGER NOT NULL DEFAULT 0 CHECK (discount_minor >= 0),
+  total_minor INTEGER NOT NULL CHECK (total_minor >= 0),
+  cash_tendered_minor INTEGER NOT NULL CHECK (cash_tendered_minor >= 0),
+  change_minor INTEGER NOT NULL CHECK (change_minor >= 0),
+  sync_state TEXT NOT NULL DEFAULT 'pending' CHECK (sync_state IN ('pending', 'synced', 'failed', 'conflict')),
+  created_at TEXT NOT NULL,
+  customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL,
+  customer_name_snapshot TEXT,
+  paid_minor INTEGER NOT NULL CHECK (paid_minor >= 0 AND paid_minor <= total_minor),
+  balance_due_minor INTEGER NOT NULL CHECK (balance_due_minor >= 0 AND paid_minor + balance_due_minor = total_minor),
+  UNIQUE (business_id, sale_number)
+);
+
+CREATE TABLE sale_items (
+  id TEXT PRIMARY KEY NOT NULL,
+  sale_id TEXT NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
+  variant_id TEXT REFERENCES product_variants(id) ON DELETE SET NULL,
+  product_name_snapshot TEXT NOT NULL,
+  variant_name_snapshot TEXT NOT NULL,
+  sku_snapshot TEXT NOT NULL,
+  quantity INTEGER NOT NULL CHECK (quantity > 0),
+  unit_price_minor INTEGER NOT NULL CHECK (unit_price_minor >= 0),
+  line_total_minor INTEGER NOT NULL CHECK (line_total_minor >= 0)
+);
+
+CREATE TABLE payments (
+  id TEXT PRIMARY KEY NOT NULL,
+  business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  store_id TEXT NOT NULL REFERENCES stores(id) ON DELETE RESTRICT,
+  sale_id TEXT NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
+  method TEXT NOT NULL CHECK (method IN ('cash', 'mobile_money', 'bank', 'credit')),
+  amount_minor INTEGER NOT NULL CHECK (amount_minor >= 0),
+  status TEXT NOT NULL CHECK (status IN ('confirmed', 'pending', 'failed', 'credit')),
+  created_at TEXT NOT NULL
+);
+
+INSERT INTO sales
+  (id, business_id, store_id, actor_id, sale_number, subtotal_minor, discount_minor, total_minor,
+   cash_tendered_minor, change_minor, sync_state, created_at, customer_id, customer_name_snapshot,
+   paid_minor, balance_due_minor)
+SELECT id, business_id, store_id, actor_id, sale_number, subtotal_minor, discount_minor, total_minor,
+       cash_tendered_minor, change_minor, sync_state, created_at, NULL, NULL, total_minor, 0
+FROM sales_old;
+INSERT INTO sale_items SELECT * FROM sale_items_old;
+INSERT INTO payments SELECT * FROM payments_old;
+
+DROP TABLE sale_items_old;
+DROP TABLE payments_old;
+DROP TABLE sales_old;
+
+CREATE INDEX idx_sales_business_created ON sales(business_id, created_at DESC);
+CREATE INDEX idx_sale_items_sale ON sale_items(sale_id);
+
+CREATE TABLE customer_ledger (
+  id TEXT PRIMARY KEY NOT NULL,
+  business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  store_id TEXT NOT NULL REFERENCES stores(id) ON DELETE RESTRICT,
+  customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
+  entry_type TEXT NOT NULL CHECK (entry_type IN ('debt', 'payment')),
+  amount_minor INTEGER NOT NULL CHECK (amount_minor > 0),
+  sale_id TEXT REFERENCES sales(id) ON DELETE SET NULL,
+  note TEXT NOT NULL DEFAULT '',
+  actor_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX idx_customer_ledger_balance ON customer_ledger(business_id, store_id, customer_id);
+
+CREATE TABLE supplier_ledger (
+  id TEXT PRIMARY KEY NOT NULL,
+  business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  store_id TEXT NOT NULL REFERENCES stores(id) ON DELETE RESTRICT,
+  supplier_id TEXT NOT NULL REFERENCES suppliers(id) ON DELETE RESTRICT,
+  entry_type TEXT NOT NULL CHECK (entry_type IN ('bill', 'payment')),
+  amount_minor INTEGER NOT NULL CHECK (amount_minor > 0),
+  note TEXT NOT NULL DEFAULT '',
+  actor_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX idx_supplier_ledger_balance ON supplier_ledger(business_id, store_id, supplier_id);
+`
+
 export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {
   await database.execAsync('PRAGMA foreign_keys = ON;')
 
@@ -224,7 +333,7 @@ export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {
     'PRAGMA user_version',
   ) ?? { user_version: 0 }
 
-  if (currentVersion > 4) {
+  if (currentVersion > 5) {
     throw new Error(`Database version ${currentVersion} is newer than this application supports.`)
   }
 
@@ -253,6 +362,13 @@ export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {
     await database.withExclusiveTransactionAsync(async (transaction) => {
       await transaction.execAsync(PHASE_FOUR_SCHEMA)
       await transaction.execAsync('PRAGMA user_version = 4;')
+    })
+  }
+
+  if (currentVersion < 5) {
+    await database.withExclusiveTransactionAsync(async (transaction) => {
+      await transaction.execAsync(PHASE_FIVE_SCHEMA)
+      await transaction.execAsync('PRAGMA user_version = 5;')
     })
   }
 }
