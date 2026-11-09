@@ -290,7 +290,8 @@ export async function getSalesSummary(
     `SELECT
        COALESCE(SUM(CASE WHEN date(created_at, '+3 hours') = ? THEN total_minor ELSE 0 END), 0) AS todayTotalMinor,
        COALESCE(SUM(CASE WHEN date(created_at, '+3 hours') = ? THEN 1 ELSE 0 END), 0) AS todayCount,
-       (SELECT COUNT(*) FROM outbox WHERE business_id = ? AND status = 'pending') AS pendingSyncCount
+       (SELECT COUNT(*) FROM outbox
+        WHERE business_id = ? AND status IN ('pending', 'in_progress', 'failed')) AS pendingSyncCount
      FROM sales
      WHERE business_id = ? AND store_id = ?`,
     today,
