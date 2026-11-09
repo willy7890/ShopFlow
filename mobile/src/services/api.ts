@@ -52,12 +52,15 @@ export interface SyncPushResult {
 }
 
 export class ApiError extends Error {
+  readonly status: number
+
   constructor(
     message: string,
-    readonly status: number,
+    status: number,
   ) {
     super(message)
     this.name = 'ApiError'
+    this.status = status
   }
 }
 

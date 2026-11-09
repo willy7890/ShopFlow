@@ -8,10 +8,12 @@ import {
   fetchBusinessAccess,
   fetchCurrentUser,
   clearOnlineSession,
+  hasOnlineSession,
   logoutOnline,
   type ApiUser,
   type BusinessAccess,
 } from '@/src/services/api'
+import { downloadRemoteCatalog } from '@/src/services/remoteCatalog'
 import { useTheme } from '@/src/theme/colors'
 import { useI18n } from '@/src/i18n/I18nProvider'
 import { translateRole } from '@/src/i18n/translations'
@@ -52,6 +54,9 @@ export default function BusinessesScreen() {
     setError(null)
     try {
       await activateRemoteWorkspace(database, user, business, storeId)
+      if (await hasOnlineSession()) {
+        await downloadRemoteCatalog(database, business.business_id, business.store_ids)
+      }
       router.replace('/(tabs)')
     } catch (reason) {
       setError(localizeError(reason, 'businesses.openError'))

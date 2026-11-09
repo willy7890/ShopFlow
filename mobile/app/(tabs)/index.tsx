@@ -47,7 +47,11 @@ export default function DashboardScreen() {
     setSyncMessage(null)
     try {
       const result: SyncSummary = await syncWorkspaceOutbox(database, current)
-      setSyncMessage(t('sync.completed', result))
+      setSyncMessage(t('sync.completed', {
+        synced: result.synced,
+        failed: result.failed,
+        pending: result.pending,
+      }))
       await load()
     } catch (reason) {
       setSyncMessage(localizeError(reason, 'sync.failed'))
