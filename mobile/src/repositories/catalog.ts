@@ -31,7 +31,11 @@ function productQuery(whereClause: string): string {
   return `SELECT
        products.id AS productId,
        products.name,
-       products.barcode,
+       COALESCE(product_variants.barcode, CASE
+         WHEN (SELECT COUNT(*) FROM product_variants AS sibling
+               WHERE sibling.product_id = products.id) = 1 THEN products.barcode
+         ELSE NULL
+       END) AS barcode,
        products.category_id AS categoryId,
        categories.name AS categoryName,
        product_variants.id AS variantId,
@@ -85,7 +89,11 @@ export async function findProductByBarcode(
   const normalizedBarcode = barcode.trim()
   if (!normalizedBarcode) return null
   return database.getFirstAsync<LocalProduct>(
-    productQuery('AND products.barcode = ? COLLATE NOCASE'),
+    productQuery(`AND COALESCE(product_variants.barcode, CASE
+      WHEN (SELECT COUNT(*) FROM product_variants AS sibling
+            WHERE sibling.product_id = products.id) = 1 THEN products.barcode
+      ELSE NULL
+    END) = ? COLLATE NOCASE`),
     workspace.storeId,
     workspace.businessId,
     normalizedBarcode,
@@ -223,8 +231,8 @@ export async function createProduct(
     await transaction.runAsync(
       `INSERT INTO product_variants
          (id, business_id, product_id, label, sku, unit_code, cost_price_minor, sell_price_minor,
-          low_stock_threshold, track_stock, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          low_stock_threshold, track_stock, barcode, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       variantId,
       workspace.businessId,
       productId,
@@ -235,6 +243,7 @@ export async function createProduct(
       parsed.data.sellPriceMinor,
       parsed.data.lowStockThreshold,
       trackStock,
+      parsed.data.barcode?.trim() || null,
       now,
     )
     if (trackStock) {
@@ -304,13 +313,14 @@ export async function updateProduct(
     )
     await transaction.runAsync(
       `UPDATE product_variants SET label = ?, sku = ?, unit_code = ?, cost_price_minor = ?,
-       sell_price_minor = ?, low_stock_threshold = ? WHERE id = ? AND business_id = ?`,
+       sell_price_minor = ?, low_stock_threshold = ?, barcode = ? WHERE id = ? AND business_id = ?`,
       parsed.data.name,
       parsed.data.sku.trim(),
       parsed.data.unitCode,
       parsed.data.costPriceMinor,
       parsed.data.sellPriceMinor,
       parsed.data.lowStockThreshold,
+      parsed.data.barcode?.trim() || null,
       variantId,
       workspace.businessId,
     )

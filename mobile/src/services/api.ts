@@ -45,6 +45,12 @@ interface ApiErrorResponse {
   detail?: string
 }
 
+export interface SyncPushResult {
+  client_id: string
+  state: 'synced' | 'failed' | 'pending'
+  message: string | null
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -130,6 +136,18 @@ export async function fetchCurrentUser(database: SQLiteDatabase): Promise<ApiUse
 
 export async function fetchBusinessAccess(database: SQLiteDatabase): Promise<BusinessAccess[]> {
   return request<BusinessAccess[]>(database, '/businesses/access')
+}
+
+export async function authenticatedApiRequest<T>(
+  database: SQLiteDatabase,
+  path: string,
+  init: RequestInit = {},
+  context?: { businessId?: string; deviceId?: string },
+): Promise<T> {
+  const headers = new Headers(init.headers)
+  if (context?.businessId) headers.set('X-Business-ID', context.businessId)
+  if (context?.deviceId) headers.set('X-Device-ID', context.deviceId)
+  return request<T>(database, path, { ...init, headers })
 }
 
 export async function logoutOnline(database: SQLiteDatabase): Promise<void> {

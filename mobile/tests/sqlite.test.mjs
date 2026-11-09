@@ -85,7 +85,7 @@ test('SQLite migrations, offline sale persistence and stock rollback are consist
   try {
     await migrateDatabase(database)
     await migrateDatabase(database)
-    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 6)
+    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 7)
 
     const workspace = await createWorkspace(database, {
       ownerName: 'Asha Mushi',
@@ -583,7 +583,7 @@ test('version 1 local business data upgrades in place and persists the default l
 
     await migrateDatabase(database)
     await migrateDatabase(database)
-    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 6)
+    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 7)
     assert.equal((await database.getFirstAsync('SELECT name FROM businesses WHERE id = ?', 'business-v1')).name, 'Existing Shop')
     assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM user_store_permissions')).count, 8)
     assert.equal((await getActiveWorkspace(database)).userId, 'owner-v1')

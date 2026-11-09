@@ -369,6 +369,24 @@ FROM supplier_ledger
 WHERE supplier_ledger.entry_type = 'payment';
 `
 
+const PHASE_SEVEN_SCHEMA = `
+ALTER TABLE product_variants ADD COLUMN barcode TEXT;
+CREATE UNIQUE INDEX idx_variants_business_barcode
+  ON product_variants(business_id, barcode) WHERE barcode IS NOT NULL;
+UPDATE product_variants
+SET barcode = (
+  SELECT products.barcode FROM products
+  WHERE products.id = product_variants.product_id
+)
+WHERE barcode IS NULL
+  AND (SELECT COUNT(*) FROM product_variants AS sibling
+       WHERE sibling.product_id = product_variants.product_id) = 1
+  AND EXISTS (
+    SELECT 1 FROM products
+    WHERE products.id = product_variants.product_id AND products.barcode IS NOT NULL
+  );
+`
+
 export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {
   await database.execAsync('PRAGMA foreign_keys = ON;')
 
@@ -376,7 +394,7 @@ export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {
     'PRAGMA user_version',
   ) ?? { user_version: 0 }
 
-  if (currentVersion > 6) {
+  if (currentVersion > 7) {
     throw new Error(`Database version ${currentVersion} is newer than this application supports.`)
   }
 
@@ -419,6 +437,13 @@ export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {
     await database.withExclusiveTransactionAsync(async (transaction) => {
       await transaction.execAsync(PHASE_SIX_SCHEMA)
       await transaction.execAsync('PRAGMA user_version = 6;')
+    })
+  }
+
+  if (currentVersion < 7) {
+    await database.withExclusiveTransactionAsync(async (transaction) => {
+      await transaction.execAsync(PHASE_SEVEN_SCHEMA)
+      await transaction.execAsync('PRAGMA user_version = 7;')
     })
   }
 }

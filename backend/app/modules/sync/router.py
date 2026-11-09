@@ -72,6 +72,7 @@ def _normalize_sync_item(item: dict[str, Any]) -> dict[str, Any]:
         if not normalized["client_id"]:
             raise HTTPException(status_code=422, detail="Each sync item requires a client_id or clientId.")
         normalized["idempotency_key"] = normalized.get("idempotency_key") or normalized["client_id"]
+        normalized["store_id"] = normalized.get("store_id") or normalized.get("storeId")
         if not normalized.get("store_id"):
             raise HTTPException(status_code=422, detail="Each sync item requires a store_id.")
         return normalized
@@ -82,6 +83,8 @@ def _normalize_sync_item(item: dict[str, Any]) -> dict[str, Any]:
     if not normalized["client_id"]:
         raise HTTPException(status_code=422, detail="Each sync item requires a client_id or clientId.")
     normalized["idempotency_key"] = normalized.get("idempotency_key") or normalized["client_id"]
+    normalized["store_id"] = normalized.get("store_id") or normalized.get("storeId")
+    normalized["customer_id"] = normalized.get("customer_id") or normalized.get("customerId")
     normalized["customer_name"] = normalized.get("customer_name") or normalized.get("customerName") or normalized.get("customer")
     normalized["customer_phone"] = normalized.get("customer_phone")
     normalized["note"] = normalized.get("note") or normalized.get("description")
@@ -117,7 +120,8 @@ def _normalize_sync_item(item: dict[str, Any]) -> dict[str, Any]:
             normalized_payment["reference"] = str(payment["reference"])
         if payment.get("note") is not None:
             normalized_payment["note"] = str(payment["note"])
-        normalized_payments.append(normalized_payment)
+        if _safe_decimal(amount) > 0:
+            normalized_payments.append(normalized_payment)
     normalized["payments"] = normalized_payments
     normalized["entity_type"] = "sale"
     return normalized
@@ -467,12 +471,54 @@ def push_sync_items(
             db.commit()
             results.append(SyncPushResult(client_id=client_id, state="synced", message=operation.result_message))
         except HTTPException as exc:
+            db.rollback()
+            operation = (
+                db.query(SyncOperation)
+                .filter(
+                    SyncOperation.business_id == membership.business_id,
+                    SyncOperation.idempotency_key == client_id,
+                )
+                .first()
+            )
+            if operation is None:
+                operation = SyncOperation(
+                    business_id=membership.business_id,
+                    user_id=current_user.id,
+                    device_id=device.id,
+                    entity_type=entity_type,
+                    operation_name=f"create_{entity_type}",
+                    idempotency_key=client_id,
+                    payload=normalized,
+                    attempts=1,
+                )
+                db.add(operation)
             operation.status = "failed"
             operation.error_message = exc.detail
             operation.result_message = None
             db.commit()
             results.append(SyncPushResult(client_id=client_id, state="failed", message=str(exc.detail)))
         except Exception as exc:
+            db.rollback()
+            operation = (
+                db.query(SyncOperation)
+                .filter(
+                    SyncOperation.business_id == membership.business_id,
+                    SyncOperation.idempotency_key == client_id,
+                )
+                .first()
+            )
+            if operation is None:
+                operation = SyncOperation(
+                    business_id=membership.business_id,
+                    user_id=current_user.id,
+                    device_id=device.id,
+                    entity_type=entity_type,
+                    operation_name=f"create_{entity_type}",
+                    idempotency_key=client_id,
+                    payload=normalized,
+                    attempts=1,
+                )
+                db.add(operation)
             operation.status = "failed"
             operation.error_message = str(exc)
             operation.result_message = None

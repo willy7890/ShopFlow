@@ -1,7 +1,8 @@
 import type { SQLiteDatabase } from 'expo-sqlite'
 import { workspaceInput, type WorkspaceInput } from '../domain/validation.ts'
 import { createPasswordHash, verifyPasswordHash } from '../domain/credentials.ts'
-import type { ApiUser, BusinessAccess } from '../services/api.ts'
+import { hasOnlineSession, type ApiUser, type BusinessAccess } from '../services/api.ts'
+import { downloadRemoteCatalog } from '../services/remoteCatalog.ts'
 
 export type Permission =
   | 'manage_business'
@@ -98,6 +99,9 @@ export async function activateRemoteWorkspace(
     manage_settings: 'manage_settings',
   }
   const now = new Date().toISOString()
+  if (await hasOnlineSession()) {
+    await downloadRemoteCatalog(database, access.business_id, selectedStore.id)
+  }
 
   await database.withExclusiveTransactionAsync(async (transaction) => {
     const activeContext = await transaction.getFirstAsync<{ setting_value: string }>(
