@@ -20,8 +20,11 @@ export interface SyncSummary {
   pending: number
 }
 
-const DEVICE_SETTING = 'sync_device_id'
 let syncInProgress: Promise<SyncSummary> | null = null
+
+function deviceSettingKey(businessId: string): string {
+  return `sync_device_id:${businessId}`
+}
 
 export async function syncWorkspaceOutbox(
   database: SQLiteDatabase,
@@ -96,7 +99,7 @@ async function performSync(
     results = await pushItems(database, workspace.businessId, deviceId.id, items)
   } catch (reason) {
     if (reason instanceof ApiError && reason.status === 404) {
-      await database.runAsync('DELETE FROM app_settings WHERE setting_key = ?', DEVICE_SETTING)
+      await database.runAsync('DELETE FROM app_settings WHERE setting_key = ?', deviceSettingKey(workspace.businessId))
       try {
         const replacement = await getOrRegisterDevice(database, workspace.businessId)
         results = await pushItems(database, workspace.businessId, replacement.id, items)
@@ -151,9 +154,10 @@ async function getOrRegisterDevice(
   database: SQLiteDatabase,
   businessId: string,
 ): Promise<RegisteredDevice> {
+  const settingKey = deviceSettingKey(businessId)
   const stored = await database.getFirstAsync<{ setting_value: string }>(
     'SELECT setting_value FROM app_settings WHERE setting_key = ?',
-    DEVICE_SETTING,
+    settingKey,
   )
   if (stored?.setting_value) return { id: stored.setting_value }
   const device = await authenticatedApiRequest<RegisteredDevice>(
@@ -172,7 +176,7 @@ async function getOrRegisterDevice(
   await database.runAsync(
     `INSERT INTO app_settings (setting_key, setting_value) VALUES (?, ?)
      ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value`,
-    DEVICE_SETTING,
+    settingKey,
     device.id,
   )
   return device

@@ -183,13 +183,22 @@ async function validateUniqueCodes(
   if (skuExists) throw new Error('That SKU is already in use. Choose another SKU.')
   if (barcode?.trim()) {
     const barcodeExists = await database.getFirstAsync<{ id: string }>(
-      `SELECT id FROM products WHERE business_id = ? AND barcode = ? COLLATE NOCASE
-       AND id != COALESCE(?, '') LIMIT 1`,
+      `SELECT id FROM products
+       WHERE business_id = ? AND barcode = ? COLLATE NOCASE
+         AND id != COALESCE(?, '')
+       UNION ALL
+       SELECT id FROM product_variants
+       WHERE business_id = ? AND barcode = ? COLLATE NOCASE
+         AND product_id != COALESCE(?, '')
+       LIMIT 1`,
+      businessId,
+      barcode.trim(),
+      exceptProductId ?? '',
       businessId,
       barcode.trim(),
       exceptProductId ?? '',
     )
-    if (barcodeExists) throw new Error('That barcode is already assigned to another product.')
+    if (barcodeExists) throw new Error('That barcode is already assigned to another product or variant.')
   }
 }
 

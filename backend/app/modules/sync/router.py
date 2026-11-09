@@ -86,7 +86,7 @@ def _normalize_sync_item(item: dict[str, Any]) -> dict[str, Any]:
     normalized["store_id"] = normalized.get("store_id") or normalized.get("storeId")
     normalized["customer_id"] = normalized.get("customer_id") or normalized.get("customerId")
     normalized["customer_name"] = normalized.get("customer_name") or normalized.get("customerName") or normalized.get("customer")
-    normalized["customer_phone"] = normalized.get("customer_phone")
+    normalized["customer_phone"] = normalized.get("customer_phone") or normalized.get("customerPhone")
     normalized["note"] = normalized.get("note") or normalized.get("description")
     if not normalized.get("items"):
         raise HTTPException(status_code=422, detail="Each sync sale requires at least one item.")
@@ -96,7 +96,13 @@ def _normalize_sync_item(item: dict[str, Any]) -> dict[str, Any]:
             raise HTTPException(status_code=422, detail="Each sync sale item must be an object.")
         variant_id = line.get("variant_id") or line.get("variantId")
         qty = line.get("quantity") or line.get("qty")
-        unit_price = line.get("unit_price") or line.get("unitPrice") or line.get("price")
+        unit_price = line.get("unit_price")
+        if unit_price is None:
+            unit_price = line.get("unitPrice")
+        if unit_price is None:
+            unit_price = line.get("unitPriceMinor")
+        if unit_price is None:
+            unit_price = line.get("price")
         if variant_id is None or qty is None:
             raise HTTPException(status_code=422, detail="Every sale line requires a variant_id and quantity.")
         normalized_line = {

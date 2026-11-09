@@ -147,7 +147,7 @@ def test_offline_sync_push_de_dupes_sale_operations():
 
 def test_offline_sync_pushes_accounts_and_cashbook_idempotently_without_receiving_stock():
     access_token, business_id = _register_owner()
-    headers = {"Authorization": f"******", "X-Business-ID": business_id}
+    headers = {"Authorization": f"Bearer {access_token}", "X-Business-ID": business_id}
     store = client.get(f"/api/v1/businesses/{business_id}/stores", headers=headers)
     assert store.status_code == 200, store.text
     store_id = store.json()[0]["id"]
@@ -227,6 +227,12 @@ def test_offline_sync_pushes_accounts_and_cashbook_idempotently_without_receivin
     )
     assert statement.status_code == 200, statement.text
     assert float(statement.json()["total_purchases"]) == 2500
+    stock = client.get(
+        f"/api/v1/inventory/stock?store_id={store_id}",
+        headers=headers,
+    )
+    assert stock.status_code == 200, stock.text
+    assert stock.json() == []
 
     entries = client.get(
         f"/api/v1/finance/entries?store_id={store_id}",
@@ -246,7 +252,7 @@ def test_offline_sync_pushes_accounts_and_cashbook_idempotently_without_receivin
 
 def test_failed_sync_operation_can_be_retried_with_the_same_client_id():
     access_token, business_id = _register_owner()
-    headers = {"Authorization": f"******", "X-Business-ID": business_id}
+    headers = {"Authorization": f"Bearer {access_token}", "X-Business-ID": business_id}
     store = client.get(f"/api/v1/businesses/{business_id}/stores", headers=headers)
     store_id = store.json()[0]["id"]
     device = client.post(
