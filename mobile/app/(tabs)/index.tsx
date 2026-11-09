@@ -7,6 +7,8 @@ import { formatTzs } from '@/src/domain/money'
 import { formatNumber } from '@/src/i18n/format'
 import { getSalesSummary, type SalesSummary } from '@/src/repositories/sales'
 import { getActiveWorkspace, type Workspace } from '@/src/repositories/workspace'
+import { hasOnlineSession } from '@/src/services/api'
+import { syncWorkspaceOutbox, type SyncSummary } from '@/src/services/sync'
 import { useTheme, type ThemeColors } from '@/src/theme/colors'
 import { useI18n } from '@/src/i18n/I18nProvider'
 
@@ -19,19 +21,53 @@ export default function DashboardScreen() {
   const [workspace, setWorkspace] = useState<Workspace | null>(null)
   const [summary, setSummary] = useState<SalesSummary | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [syncMessage, setSyncMessage] = useState<string | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const [onlineContext, setOnlineContext] = useState(false)
 
   const load = useCallback(async () => {
     try {
       const current = await getActiveWorkspace(database)
+      const context = await database.getFirstAsync<{ setting_value: string }>(
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'active_context'",
+      )
       setWorkspace(current)
+      setOnlineContext(context?.setting_value === 'online')
       setSummary(current ? await getSalesSummary(database, current) : null)
       setError(null)
+      return current
     } catch (reason) {
       setError(localizeError(reason, 'dashboard.loadError'))
+      return null
     }
   }, [database, localizeError])
 
-  useFocusEffect(useCallback(() => { void load() }, [load]))
+  const syncNow = useCallback(async (current: Workspace) => {
+    setSyncing(true)
+    setSyncMessage(null)
+    try {
+      const result: SyncSummary = await syncWorkspaceOutbox(database, current)
+      setSyncMessage(t('sync.completed', result))
+      await load()
+    } catch (reason) {
+      setSyncMessage(localizeError(reason, 'sync.failed'))
+      await load()
+    } finally {
+      setSyncing(false)
+    }
+  }, [database, load, localizeError, t])
+
+  useFocusEffect(useCallback(() => {
+    let active = true
+    void (async () => {
+      const current = await load()
+      if (!active || !current) return
+      if (active && onlineContext && await hasOnlineSession()) {
+        await syncNow(current)
+      }
+    })()
+    return () => { active = false }
+  }, [database, load, onlineContext, syncNow]))
 
   if (error) {
     return (
@@ -95,7 +131,15 @@ export default function DashboardScreen() {
               : t('dashboard.offlineMessageMany', { count: formatNumber(summary.pendingSyncCount, language) })}
         </Text>
         <Text style={styles.pendingNote}>{t('dashboard.noNetworkSync')}</Text>
+        <Button
+          label={syncing ? t('sync.running') : t('sync.now')}
+          onPress={() => void syncNow(workspace)}
+          disabled={syncing || !onlineContext}
+          secondary
+        />
+        {syncMessage ? <Text style={styles.pendingNote}>{syncMessage}</Text> : null}
       </Card>
+      <Button label={t('assistant.open')} secondary onPress={() => router.push('/assistant')} />
       <Button label={t('dashboard.viewStock')} secondary onPress={() => router.push('/inventory')} />
     </Screen>
   )

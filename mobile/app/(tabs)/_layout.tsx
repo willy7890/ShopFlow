@@ -43,6 +43,7 @@ export default function TabLayout() {
       <Tabs.Screen name="accounts" options={{ href: null }} />
       <Tabs.Screen name="cashbook" options={{ href: null }} />
       <Tabs.Screen name="reports" options={{ href: null }} />
+      <Tabs.Screen name="assistant" options={{ href: null }} />
     </Tabs>
   )
 }
