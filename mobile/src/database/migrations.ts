@@ -341,6 +341,32 @@ CREATE TABLE cashbook_entries (
   created_at TEXT NOT NULL
 );
 CREATE INDEX idx_cashbook_store_created ON cashbook_entries(business_id, store_id, created_at DESC);
+
+INSERT INTO cashbook_entries
+  (id, business_id, store_id, entry_type, source, category, amount_minor, reference_id, actor_id, created_at)
+SELECT 'legacy-sale-' || payments.id, payments.business_id, payments.store_id, 'income', 'sale',
+       'Sale', payments.amount_minor, payments.sale_id, sales.actor_id, payments.created_at
+FROM payments
+JOIN sales ON sales.id = payments.sale_id
+WHERE payments.method = 'cash' AND payments.status = 'confirmed' AND payments.amount_minor > 0;
+
+INSERT INTO cashbook_entries
+  (id, business_id, store_id, entry_type, source, category, amount_minor, note, reference_id, actor_id, created_at)
+SELECT 'legacy-customer-payment-' || customer_ledger.id, customer_ledger.business_id,
+       customer_ledger.store_id, 'income', 'customer_collection', 'Customer collection',
+       customer_ledger.amount_minor, customer_ledger.note, customer_ledger.id,
+       customer_ledger.actor_id, customer_ledger.created_at
+FROM customer_ledger
+WHERE customer_ledger.entry_type = 'payment';
+
+INSERT INTO cashbook_entries
+  (id, business_id, store_id, entry_type, source, category, amount_minor, note, reference_id, actor_id, created_at)
+SELECT 'legacy-supplier-payment-' || supplier_ledger.id, supplier_ledger.business_id,
+       supplier_ledger.store_id, 'expense', 'supplier_payment', 'Supplier payment',
+       supplier_ledger.amount_minor, supplier_ledger.note, supplier_ledger.id,
+       supplier_ledger.actor_id, supplier_ledger.created_at
+FROM supplier_ledger
+WHERE supplier_ledger.entry_type = 'payment';
 `
 
 export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {

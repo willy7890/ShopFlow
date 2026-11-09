@@ -27,6 +27,12 @@ import {
   recordSupplierPayment,
 } from '../src/repositories/accounts.ts'
 import {
+  createManualCashbookEntry,
+  getCashbookTotals,
+  getLocalReport,
+  listCashbookEntries,
+} from '../src/repositories/cashbook.ts'
+import {
   assertPermission,
   activateRemoteWorkspace,
   authenticateUser,
@@ -79,7 +85,7 @@ test('SQLite migrations, offline sale persistence and stock rollback are consist
   try {
     await migrateDatabase(database)
     await migrateDatabase(database)
-    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 5)
+    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 6)
 
     const workspace = await createWorkspace(database, {
       ownerName: 'Asha Mushi',
@@ -175,7 +181,8 @@ test('SQLite migrations, offline sale persistence and stock rollback are consist
     const summary = await getSalesSummary(database, workspace)
     assert.equal(summary.todayTotalMinor, 1000)
     assert.equal(summary.todayCount, 1)
-    assert.equal(summary.pendingSyncCount, 1)
+    assert.equal(summary.pendingSyncCount, 2)
+    assert.deepEqual({ ...await getCashbookTotals(database, workspace) }, { incomeMinor: 1000, expenseMinor: 0 })
 
     await assert.rejects(
       createCashSale(database, workspace, {
@@ -301,7 +308,7 @@ test('SQLite migrations, offline sale persistence and stock rollback are consist
     await migrateDatabase(database)
     assert.deepEqual({ ...await getActiveWorkspace(database) }, workspace)
     assert.equal((await listProducts(database, workspace))[0].quantity, 2)
-    assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM outbox')).count, 2)
+    assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM outbox')).count, 4)
     await clearActiveSession(database)
     await assert.rejects(listProducts(database, workspace), /session or store has changed/)
   } finally {
@@ -383,6 +390,30 @@ test('customer debts and supplier payables are isolated, balanced and atomic', a
     await assert.rejects(recordSupplierPayment(database, workspace, supplier.id, 801, '', randomUUID), /cannot exceed the outstanding balance/)
     await recordSupplierPayment(database, workspace, supplier.id, 300, '', randomUUID)
     assert.equal((await listSuppliers(database, workspace))[0].balanceMinor, 500)
+    await createManualCashbookEntry(database, workspace, {
+      entryType: 'income',
+      category: 'Other income',
+      amountMinor: 1000,
+      note: 'Manual cash receipt',
+    }, randomUUID)
+    await createManualCashbookEntry(database, workspace, {
+      entryType: 'expense',
+      category: 'Transport',
+      amountMinor: 50,
+      note: '',
+    }, randomUUID)
+    const cashbookTotals = await getCashbookTotals(database, workspace)
+    assert.deepEqual({ ...cashbookTotals }, { incomeMinor: 1500, expenseMinor: 350 })
+    assert.equal((await listCashbookEntries(database, workspace)).length, 5)
+    const report = await getLocalReport(database, workspace, 30)
+    assert.equal(report.salesTotalMinor, 1000)
+    assert.equal(report.salesCount, 1)
+    assert.equal(report.incomeMinor, 1500)
+    assert.equal(report.expenseMinor, 350)
+    assert.equal(report.netCashMinor, 1150)
+    assert.equal(report.customerDebtMinor, 500)
+    assert.equal(report.supplierPayableMinor, 500)
+    assert.deepEqual(report.topProducts.map((item) => item.name), ['Rice'])
 
     await createStore(database, workspace, { name: 'Second Store', code: 'SECOND' }, randomUUID)
     const secondStore = (await listStores(database, workspace)).find((store) => store.code === 'SECOND')
@@ -392,7 +423,7 @@ test('customer debts and supplier payables are isolated, balanced and atomic', a
     assert.ok(secondWorkspace)
     assert.equal((await listCustomers(database, secondWorkspace))[0].balanceMinor, 0)
     assert.equal((await listSuppliers(database, secondWorkspace))[0].balanceMinor, 0)
-    assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM outbox')).count, 6)
+    assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM outbox')).count, 11)
   } finally {
     database.close()
     rmSync(directory, { recursive: true, force: true })
@@ -549,7 +580,7 @@ test('version 1 local business data upgrades in place and persists the default l
 
     await migrateDatabase(database)
     await migrateDatabase(database)
-    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 5)
+    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 6)
     assert.equal((await database.getFirstAsync('SELECT name FROM businesses WHERE id = ?', 'business-v1')).name, 'Existing Shop')
     assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM user_store_permissions')).count, 8)
     assert.equal((await getActiveWorkspace(database)).userId, 'owner-v1')
@@ -565,6 +596,10 @@ test('version 1 local business data upgrades in place and persists the default l
     ) }, { paid: 200, due: 0 })
     assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM sale_items WHERE sale_id = ?', 'sale-v1')).count, 1)
     assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM payments WHERE sale_id = ?', 'sale-v1')).count, 1)
+    assert.equal((await database.getFirstAsync(
+      'SELECT amount_minor AS amount FROM cashbook_entries WHERE reference_id = ?',
+      'sale-v1',
+    )).amount, 200)
   } finally {
     database.close()
     rmSync(directory, { recursive: true, force: true })
