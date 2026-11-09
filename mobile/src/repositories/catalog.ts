@@ -76,6 +76,22 @@ export async function listProducts(
   )
 }
 
+export async function findProductByBarcode(
+  database: SQLiteDatabase,
+  workspace: Workspace,
+  barcode: string,
+): Promise<LocalProduct | null> {
+  await assertActiveWorkspace(database, workspace)
+  const normalizedBarcode = barcode.trim()
+  if (!normalizedBarcode) return null
+  return database.getFirstAsync<LocalProduct>(
+    productQuery('AND products.barcode = ? COLLATE NOCASE'),
+    workspace.storeId,
+    workspace.businessId,
+    normalizedBarcode,
+  )
+}
+
 export async function listCategories(
   database: SQLiteDatabase,
   workspace: Workspace,

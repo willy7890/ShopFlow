@@ -233,8 +233,8 @@ export async function getSalesSummary(
   const today = `${dateParts.find((part) => part.type === 'year')?.value}-${dateParts.find((part) => part.type === 'month')?.value}-${dateParts.find((part) => part.type === 'day')?.value}`
   const summary = await database.getFirstAsync<SalesSummary>(
     `SELECT
-       COALESCE(SUM(CASE WHEN substr(created_at, 1, 10) = ? THEN total_minor ELSE 0 END), 0) AS todayTotalMinor,
-       COALESCE(SUM(CASE WHEN substr(created_at, 1, 10) = ? THEN 1 ELSE 0 END), 0) AS todayCount,
+       COALESCE(SUM(CASE WHEN date(created_at, '+3 hours') = ? THEN total_minor ELSE 0 END), 0) AS todayTotalMinor,
+       COALESCE(SUM(CASE WHEN date(created_at, '+3 hours') = ? THEN 1 ELSE 0 END), 0) AS todayCount,
        (SELECT COUNT(*) FROM outbox WHERE business_id = ? AND status = 'pending') AS pendingSyncCount
      FROM sales
      WHERE business_id = ? AND store_id = ?`,

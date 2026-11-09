@@ -4,9 +4,10 @@ import { useFocusEffect, useRouter } from 'expo-router'
 import { useSQLiteContext } from 'expo-sqlite'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { Button, Card, Field, LoadingState, PageTitle, Screen } from '@/src/components/NativeUi'
+import { BarcodeScanner } from '@/src/components/BarcodeScanner'
 import { formatTzs, multiplyMoney, parseTzsAmount } from '@/src/domain/money'
 import { createCashSale } from '@/src/repositories/sales'
-import { listProducts, type LocalProduct } from '@/src/repositories/catalog'
+import { findProductByBarcode, listProducts, type LocalProduct } from '@/src/repositories/catalog'
 import { getActiveWorkspace, type Workspace } from '@/src/repositories/workspace'
 import { useTheme, type ThemeColors } from '@/src/theme/colors'
 import { useI18n } from '@/src/i18n/I18nProvider'
@@ -22,8 +23,11 @@ export default function PosScreen() {
   const [products, setProducts] = useState<LocalProduct[]>([])
   const [cart, setCart] = useState<Record<string, number>>({})
   const [cashTendered, setCashTendered] = useState('')
+  const [barcode, setBarcode] = useState('')
+  const [unknownBarcode, setUnknownBarcode] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [receipt, setReceipt] = useState<string | null>(null)
+  const [scannerOpen, setScannerOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
 
@@ -68,6 +72,28 @@ export default function PosScreen() {
     setCashTendered(String(nextTotal))
   }
 
+  const addBarcodeToCart = async (value: string) => {
+    const scannedBarcode = value.trim()
+    setBarcode('')
+    if (!scannedBarcode) return
+    if (!workspace) {
+      setError(t('pos.setupRequired'))
+      return
+    }
+    setError(null)
+    try {
+      const product = await findProductByBarcode(database, workspace, scannedBarcode)
+      if (!product) {
+        setUnknownBarcode(scannedBarcode)
+        return
+      }
+      setUnknownBarcode('')
+      changeQuantity(product, 1)
+    } catch (reason) {
+      setError(localizeError(reason, 'pos.barcodeLookupError'))
+    }
+  }
+
   const completeSale = async () => {
     if (!workspace) {
       setError(t('pos.setupRequired'))
@@ -109,6 +135,31 @@ export default function PosScreen() {
   return (
     <Screen>
       <PageTitle title={t('pos.title')} subtitle={t('pos.subtitle')} />
+      <Card>
+        <Text style={styles.sectionTitle}>{t('pos.scanTitle')}</Text>
+        <Field
+          label={t('products.barcode')}
+          value={barcode}
+          onChangeText={setBarcode}
+          onSubmitEditing={() => void addBarcodeToCart(barcode)}
+          returnKeyType="search"
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        <Button label={t('pos.addBarcode')} secondary onPress={() => void addBarcodeToCart(barcode)} disabled={!barcode.trim()} />
+        <Button label={t('pos.openScanner')} onPress={() => setScannerOpen(true)} />
+        {unknownBarcode ? (
+          <View style={styles.unknownBarcode}>
+            <Text style={styles.muted}>{t('pos.unknownBarcode', { barcode: unknownBarcode })}</Text>
+            <Button
+              label={t('pos.registerBarcodeProduct')}
+              secondary
+              onPress={() => router.push({ pathname: '/products', params: { barcode: unknownBarcode } })}
+            />
+            <Button label={t('common.cancel')} secondary onPress={() => setUnknownBarcode('')} />
+          </View>
+        ) : null}
+      </Card>
       <Card>
         <Text style={styles.sectionTitle}>{t('pos.productsInStock')}</Text>
         {products.filter((product) => !product.trackStock || product.quantity > 0).length === 0 ? (
@@ -172,6 +223,14 @@ export default function PosScreen() {
         {receipt ? <Text style={styles.success}>{receipt}</Text> : null}
         <Button label={saving ? t('pos.saving') : t('pos.complete')} onPress={() => void completeSale()} disabled={saving || selected.length === 0} />
       </Card>
+      <BarcodeScanner
+        visible={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onScanned={(value) => {
+          setScannerOpen(false)
+          void addBarcodeToCart(value)
+        }}
+      />
     </Screen>
   )
 }
@@ -199,5 +258,6 @@ function createStyles(colors: ThemeColors) {
     error: { color: colors.danger, fontSize: 14 },
     success: { color: colors.success, fontSize: 14, fontWeight: '600' },
     empty: { gap: 14 },
+    unknownBarcode: { borderTopColor: colors.border, borderTopWidth: 1, gap: 10, paddingTop: 12 },
   })
 }

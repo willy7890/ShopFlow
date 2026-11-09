@@ -13,9 +13,10 @@ npm test
 
 `npm start` starts Expo Go/development tooling. It is not a standalone APK. See [the local Android build guide](../docs/ANDROID_BUILD.md) for SDK requirements and local Gradle build commands.
 
-With the Android SDK and JDK configured, generate a standalone debug APK with:
+After adding or changing native modules, regenerate the native project, then build a standalone debug APK (with the Android SDK and JDK configured):
 
 ```bash
+npm run android:prebuild
 npm run android:apk:debug
 ```
 
@@ -29,6 +30,7 @@ The APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`. A sig
 - Product and category create/edit/search with SKU, barcode, integer-TZS purchase/selling prices and opening stock.
 - Store-specific stock additions/reductions/adjustments, reasoned movement history and low/out-of-stock alerts.
 - Cash POS with quantity, stock validation in inventory mode, cash tender/change and atomic local sale/outbox records.
+- POS barcode scanning with camera permission handling, external keyboard-scanner/manual barcode entry, exact local lookup, repeated-scan quantity increments and unknown-code product registration.
 - Local analytics and notifications that summarize today’s sales, top sellers and low-stock alerts directly from SQLite records.
 - Online account registration/sign-in with SecureStore-backed tokens, plus server-validated business/store selection.
 - SQLite schema migrations through v3; existing v1 records are migrated in place. No API sync is enabled.

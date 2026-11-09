@@ -10,6 +10,7 @@ import {
   createCategory,
   createProduct,
   deleteCategory,
+  findProductByBarcode,
   listCategories,
   listProducts,
   updateProduct,
@@ -117,6 +118,9 @@ test('SQLite migrations, offline sale persistence and stock rollback are consist
     assert.equal(product.barcode, '1234567890123')
     assert.equal(product.categoryName, 'Beverages')
     assert.equal((await listProducts(database, workspace, '1234567890123')).length, 1)
+    assert.equal((await findProductByBarcode(database, workspace, ' 1234567890123 ')).variantId, product.variantId)
+    assert.equal(await findProductByBarcode(database, workspace, '0000000000000'), null)
+    assert.equal(await findProductByBarcode(database, workspace, '   '), null)
     await switchStore(database, workspace, secondStore.id)
     const secondStoreWorkspace = await getActiveWorkspace(database)
     assert.ok(secondStoreWorkspace)

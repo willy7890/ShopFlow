@@ -1,6 +1,6 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import * as Crypto from 'expo-crypto'
-import { useFocusEffect } from 'expo-router'
+import { useFocusEffect, useLocalSearchParams } from 'expo-router'
 import { useSQLiteContext } from 'expo-sqlite'
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native'
 import { Button, Card, Field, LoadingState, PageTitle, Screen } from '@/src/components/NativeUi'
@@ -31,6 +31,7 @@ export default function ProductsScreen() {
   const { language, t, error: localizeError } = useI18n()
   const styles = createStyles(colors)
   const database = useSQLiteContext()
+  const { barcode: barcodeParam } = useLocalSearchParams<{ barcode?: string }>()
   const [workspace, setWorkspace] = useState<Workspace | null>(null)
   const [products, setProducts] = useState<LocalProduct[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -49,6 +50,10 @@ export default function ProductsScreen() {
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (typeof barcodeParam === 'string') setBarcode(barcodeParam)
+  }, [barcodeParam])
 
   const load = useCallback(async () => {
     setLoading(true)
