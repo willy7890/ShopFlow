@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite'
 import { ApiError, authenticatedApiRequest, hasOnlineSession, type SyncPushResult } from './api.ts'
-import { downloadRemoteCatalog } from './remoteCatalog.ts'
+import { refreshRemoteStock } from './remoteCatalog.ts'
 import type { Workspace } from '../repositories/workspace.ts'
 
 interface OutboxRow {
@@ -55,7 +55,11 @@ async function performSync(
     'SELECT id FROM stores WHERE business_id = ? AND is_active = 1',
     workspace.businessId,
   )
-  await downloadRemoteCatalog(database, workspace.businessId, stores.map((store) => store.id), false)
+  const trackedVariants = await refreshRemoteStock(
+    database,
+    workspace.businessId,
+    stores.map((store) => store.id),
+  )
   const rows = await database.getAllAsync<OutboxRow>(
     `SELECT client_id, entity_type, entity_id, payload_json
      FROM outbox
@@ -141,17 +145,49 @@ async function performSync(
           row.entity_id,
           workspace.businessId,
         )
+        if (status === 'synced') {
+          const sale = JSON.parse(row.payload_json) as {
+            storeId?: string
+            store_id?: string
+            items?: Array<{ variantId?: string; quantity?: number }>
+          }
+          const storeId = sale.storeId ?? sale.store_id
+          for (const line of sale.items ?? []) {
+            if (!storeId || !line.variantId || !trackedVariants.has(line.variantId)) continue
+            const quantity = Number(line.quantity)
+            if (!Number.isSafeInteger(quantity) || quantity <= 0) {
+              throw new Error('A synced sale has an invalid stock quantity; stock reconciliation is required.')
+            }
+            await transaction.runAsync(
+              `UPDATE inventory_balances
+               SET quantity = quantity + ?, updated_at = ?
+               WHERE business_id = ? AND store_id = ? AND variant_id = ?`,
+              quantity,
+              new Date().toISOString(),
+              workspace.businessId,
+              storeId,
+              line.variantId,
+            )
+          }
+        }
       }
       if (status === 'synced') synced += 1
       else failed += 1
     }
   })
+  let stockRefreshError: string | null = null
+  try {
+    await refreshRemoteStock(database, workspace.businessId, stores.map((store) => store.id))
+  } catch (reason) {
+    stockRefreshError = reason instanceof Error ? reason.message : String(reason)
+  }
   const remaining = await database.getFirstAsync<{ count: number }>(
     `SELECT COUNT(*) AS count FROM outbox
      WHERE business_id = ? AND status IN ('pending', 'in_progress')`,
     workspace.businessId,
   )
-  const failureMessage = results.find((result) => result.state !== 'synced')?.message ?? null
+  const failureMessage = results.find((result) => result.state !== 'synced')?.message
+    ?? stockRefreshError
   return {
     synced,
     failed,

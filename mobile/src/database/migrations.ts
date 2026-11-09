@@ -387,6 +387,13 @@ WHERE barcode IS NULL
   );
 `
 
+const PHASE_EIGHT_SCHEMA = `
+ALTER TABLE product_variants ADD COLUMN remote_catalog INTEGER NOT NULL DEFAULT 0
+  CHECK (remote_catalog IN (0, 1));
+ALTER TABLE product_variants ADD COLUMN remote_track_stock INTEGER NOT NULL DEFAULT 0
+  CHECK (remote_track_stock IN (0, 1));
+`
+
 export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {
   await database.execAsync('PRAGMA foreign_keys = ON;')
 
@@ -394,7 +401,7 @@ export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {
     'PRAGMA user_version',
   ) ?? { user_version: 0 }
 
-  if (currentVersion > 7) {
+  if (currentVersion > 8) {
     throw new Error(`Database version ${currentVersion} is newer than this application supports.`)
   }
 
@@ -444,6 +451,13 @@ export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {
     await database.withExclusiveTransactionAsync(async (transaction) => {
       await transaction.execAsync(PHASE_SEVEN_SCHEMA)
       await transaction.execAsync('PRAGMA user_version = 7;')
+    })
+  }
+
+  if (currentVersion < 8) {
+    await database.withExclusiveTransactionAsync(async (transaction) => {
+      await transaction.execAsync(PHASE_EIGHT_SCHEMA)
+      await transaction.execAsync('PRAGMA user_version = 8;')
     })
   }
 }
