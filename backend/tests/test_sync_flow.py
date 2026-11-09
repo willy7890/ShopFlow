@@ -143,3 +143,134 @@ def test_offline_sync_push_de_dupes_sale_operations():
     pull = client.get("/api/v1/sync/pull", headers={**headers, "X-Device-ID": device_id})
     assert pull.status_code == 200, pull.text
     assert len(pull.json()) >= 1
+
+
+def test_offline_sync_pushes_accounts_and_cashbook_idempotently_without_receiving_stock():
+    access_token, business_id = _register_owner()
+    headers = {"Authorization": f"******", "X-Business-ID": business_id}
+    store = client.get(f"/api/v1/businesses/{business_id}/stores", headers=headers)
+    assert store.status_code == 200, store.text
+    store_id = store.json()[0]["id"]
+    device = client.post(
+        "/api/v1/sync/devices",
+        json={"device_name": "accounts-phone", "device_type": "mobile"},
+        headers=headers,
+    )
+    assert device.status_code == 201, device.text
+    sync_headers = {**headers, "X-Device-ID": device.json()["id"]}
+
+    customer_id = str(uuid4())
+    supplier_id = str(uuid4())
+    customer_payment_id = str(uuid4())
+    supplier_bill_id = str(uuid4())
+    cashbook_id = str(uuid4())
+    payload = {
+        "items": [
+            {
+                "clientId": "offline-customer-1",
+                "entity_type": "customer",
+                "id": customer_id,
+                "storeId": store_id,
+                "name": "Offline Customer",
+                "phone": "255700000333",
+            },
+            {
+                "clientId": "offline-supplier-1",
+                "entity_type": "supplier",
+                "id": supplier_id,
+                "storeId": store_id,
+                "name": "Offline Supplier",
+                "phone": "255700000444",
+            },
+            {
+                "clientId": "offline-customer-payment-1",
+                "entity_type": "customer_ledger",
+                "entryId": customer_payment_id,
+                "storeId": store_id,
+                "customerId": customer_id,
+                "entryType": "payment",
+                "amountMinor": 500,
+            },
+            {
+                "clientId": "offline-supplier-bill-1",
+                "entity_type": "supplier_ledger",
+                "entryId": supplier_bill_id,
+                "storeId": store_id,
+                "supplierId": supplier_id,
+                "entryType": "bill",
+                "amountMinor": 2500,
+            },
+            {
+                "clientId": "offline-cashbook-1",
+                "entity_type": "cashbook_entry",
+                "entryId": cashbook_id,
+                "storeId": store_id,
+                "entryType": "income",
+                "source": "manual",
+                "category": "Offline income",
+                "amountMinor": 750,
+            },
+        ]
+    }
+
+    pushed = client.post("/api/v1/sync/push", json=payload, headers=sync_headers)
+    assert pushed.status_code == 200, pushed.text
+    assert [result["state"] for result in pushed.json()] == ["synced"] * 5
+
+    duplicated = client.post("/api/v1/sync/push", json=payload, headers=sync_headers)
+    assert duplicated.status_code == 200, duplicated.text
+    assert [result["state"] for result in duplicated.json()] == ["synced"] * 5
+
+    statement = client.get(
+        f"/api/v1/inventory/suppliers/{supplier_id}/statement",
+        headers=headers,
+    )
+    assert statement.status_code == 200, statement.text
+    assert float(statement.json()["total_purchases"]) == 2500
+
+    entries = client.get(
+        f"/api/v1/finance/entries?store_id={store_id}",
+        headers=headers,
+    )
+    assert entries.status_code == 200, entries.text
+    assert sum(entry["id"] == cashbook_id for entry in entries.json()) == 1
+
+    history = client.get(
+        f"/api/v1/customers/{customer_id}/history",
+        headers=headers,
+    )
+    assert history.status_code == 200, history.text
+    assert len(history.json()) == 1
+    assert float(history.json()[0]["amount"]) == -500
+
+
+def test_failed_sync_operation_can_be_retried_with_the_same_client_id():
+    access_token, business_id = _register_owner()
+    headers = {"Authorization": f"******", "X-Business-ID": business_id}
+    store = client.get(f"/api/v1/businesses/{business_id}/stores", headers=headers)
+    store_id = store.json()[0]["id"]
+    device = client.post(
+        "/api/v1/sync/devices",
+        json={"device_name": "retry-phone", "device_type": "mobile"},
+        headers=headers,
+    )
+    sync_headers = {**headers, "X-Device-ID": device.json()["id"]}
+    client_id = "offline-customer-retry"
+    payload = {
+        "items": [{
+            "clientId": client_id,
+            "entity_type": "customer",
+            "id": str(uuid4()),
+            "storeId": store_id,
+            "name": "",
+        }]
+    }
+
+    failed = client.post("/api/v1/sync/push", json=payload, headers=sync_headers)
+    assert failed.status_code == 200, failed.text
+    assert failed.json()[0]["state"] == "failed"
+
+    payload["items"][0]["name"] = "Recovered Customer"
+    retried = client.post("/api/v1/sync/push", json=payload, headers=sync_headers)
+    assert retried.status_code == 200, retried.text
+    assert retried.json()[0]["state"] == "synced"

@@ -100,7 +100,7 @@ export async function activateRemoteWorkspace(
   }
   const now = new Date().toISOString()
   if (await hasOnlineSession()) {
-    await downloadRemoteCatalog(database, access.business_id, selectedStore.id)
+    await downloadRemoteCatalog(database, access.business_id, stores.map((store) => store.id))
   }
 
   await database.withExclusiveTransactionAsync(async (transaction) => {

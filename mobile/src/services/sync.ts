@@ -47,7 +47,11 @@ async function performSync(
     throw new Error('Sign in to an online business workspace before syncing.')
   }
 
-  await downloadRemoteCatalog(database, workspace.businessId, workspace.storeId)
+  const stores = await database.getAllAsync<{ id: string }>(
+    'SELECT id FROM stores WHERE business_id = ? AND is_active = 1',
+    workspace.businessId,
+  )
+  await downloadRemoteCatalog(database, workspace.businessId, stores.map((store) => store.id))
   const rows = await database.getAllAsync<OutboxRow>(
     `SELECT client_id, entity_type, entity_id, payload_json
      FROM outbox

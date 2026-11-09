@@ -410,6 +410,9 @@ def push_sync_items(
         if duplicate:
             operation = duplicate
             operation.status = "pending"
+            operation.payload = normalized
+            operation.entity_type = entity_type
+            operation.operation_name = f"create_{entity_type}"
             operation.error_message = None
             operation.attempts += 1
         else:

@@ -52,19 +52,22 @@ function wholeValue(value: string | number, label: string, minimum = 0): number 
 export async function downloadRemoteCatalog(
   database: SQLiteDatabase,
   businessId: string,
-  storeId: string,
+  storeIds: string[],
 ): Promise<void> {
   const context = { businessId }
-  const [categories, units, products, balances] = await Promise.all([
+  const [categories, units, products, stockByStore] = await Promise.all([
     authenticatedApiRequest<RemoteCategory[]>(database, '/catalog/categories', {}, context),
     authenticatedApiRequest<RemoteUnit[]>(database, '/catalog/units', {}, context),
     authenticatedApiRequest<RemoteProduct[]>(database, '/catalog/products', {}, context),
-    authenticatedApiRequest<RemoteBalance[]>(
-      database,
-      `/inventory/stock?store_id=${encodeURIComponent(storeId)}`,
-      {},
-      context,
-    ),
+    Promise.all(storeIds.map(async (storeId) => [
+      storeId,
+      await authenticatedApiRequest<RemoteBalance[]>(
+        database,
+        `/inventory/stock?store_id=${encodeURIComponent(storeId)}`,
+        {},
+        context,
+      ),
+    ] as const)),
   ])
   const unitCodes = new Map(units.map((unit) => [unit.id, unit.code]))
   const activeProducts = products.filter((product) => product.is_active)
@@ -78,7 +81,10 @@ export async function downloadRemoteCatalog(
     return [product.id, variants.filter((variant) => variant.is_active)] as const
   }))
   const productVariants = new Map(variantsByProduct)
-  const stockByVariant = new Map(balances.map((balance) => [balance.variant_id, balance.quantity]))
+  const stockMaps = new Map(stockByStore.map(([storeId, balances]) => [
+    storeId,
+    new Map(balances.map((balance) => [balance.variant_id, balance.quantity])),
+  ]))
   const now = new Date().toISOString()
 
   await database.withExclusiveTransactionAsync(async (transaction) => {
@@ -89,13 +95,20 @@ export async function downloadRemoteCatalog(
     )
     const unsyncedQuantities = new Map<string, number>()
     for (const pending of pendingLines) {
-      const payload = JSON.parse(pending.payload_json) as { items?: Array<{ variantId?: string; quantity?: number }> }
+      const payload = JSON.parse(pending.payload_json) as {
+        storeId?: string
+        store_id?: string
+        items?: Array<{ variantId?: string; quantity?: number }>
+      }
+      const pendingStoreId = payload.storeId ?? payload.store_id
+      if (!pendingStoreId) continue
       for (const line of payload.items ?? []) {
         if (!line.variantId) continue
         const quantity = wholeValue(line.quantity ?? 0, 'Pending-sale quantity')
+        const key = `${pendingStoreId}\u0000${line.variantId}`
         unsyncedQuantities.set(
-          line.variantId,
-          (unsyncedQuantities.get(line.variantId) ?? 0) + quantity,
+          key,
+          (unsyncedQuantities.get(key) ?? 0) + quantity,
         )
       }
     }
@@ -160,25 +173,27 @@ export async function downloadRemoteCatalog(
           variant.barcode,
           now,
         )
-        const serverQuantity = wholeValue(
-          stockByVariant.get(variant.id) ?? 0,
-          `${product.name} stock quantity`,
-        )
-        const unsyncedQuantity = unsyncedQuantities.get(variant.id) ?? 0
-        const localQuantity = Math.max(0, serverQuantity - unsyncedQuantity)
-        await transaction.runAsync(
-          `INSERT INTO inventory_balances
-             (id, business_id, store_id, variant_id, quantity, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?)
-           ON CONFLICT(business_id, store_id, variant_id)
-           DO UPDATE SET quantity = excluded.quantity, updated_at = excluded.updated_at`,
-          `remote-${storeId}-${variant.id}`,
-          businessId,
-          storeId,
-          variant.id,
-          localQuantity,
-          now,
-        )
+        for (const storeId of storeIds) {
+          const serverQuantity = wholeValue(
+            stockMaps.get(storeId)?.get(variant.id) ?? 0,
+            `${product.name} stock quantity`,
+          )
+          const unsyncedQuantity = unsyncedQuantities.get(`${storeId}\u0000${variant.id}`) ?? 0
+          const localQuantity = Math.max(0, serverQuantity - unsyncedQuantity)
+          await transaction.runAsync(
+            `INSERT INTO inventory_balances
+               (id, business_id, store_id, variant_id, quantity, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?)
+             ON CONFLICT(business_id, store_id, variant_id)
+             DO UPDATE SET quantity = excluded.quantity, updated_at = excluded.updated_at`,
+            `remote-${storeId}-${variant.id}`,
+            businessId,
+            storeId,
+            variant.id,
+            localQuantity,
+            now,
+          )
+        }
       }
     }
   })
