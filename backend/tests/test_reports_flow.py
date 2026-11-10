@@ -102,6 +102,11 @@ def test_reports_dashboard_sales_profit_inventory_and_exports():
 
     receive_response = client.post(f"/api/v1/inventory/purchases/{purchase_id}/receive", headers={**headers, "X-Store-ID": store_id})
     assert receive_response.status_code == 200, receive_response.text
+    purchases_response = client.get("/api/v1/inventory/purchases", headers=headers)
+    assert purchases_response.status_code == 200, purchases_response.text
+    listed_purchase = next(row for row in purchases_response.json() if row["id"] == purchase_id)
+    assert listed_purchase["items"][0]["product_name"] == "Notebook"
+    assert float(listed_purchase["paid_amount"]) == 0
 
     draft_purchase = client.post(
         "/api/v1/inventory/purchases",
@@ -203,6 +208,8 @@ def test_reports_dashboard_sales_profit_inventory_and_exports():
     )
     assert inventory_report.status_code == 200, inventory_report.text
     assert inventory_report.json()["total_variants"] >= 1
+    assert inventory_report.json()["total_retail_value"] == "5400.00"
+    assert inventory_report.json()["out_of_stock_variants"] == 0
 
     dashboard = client.get(
         "/api/v1/reports/dashboard",

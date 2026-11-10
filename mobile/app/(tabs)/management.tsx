@@ -4,6 +4,9 @@ import { useFocusEffect, useRouter } from 'expo-router'
 import { useSQLiteContext } from 'expo-sqlite'
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native'
 import { Button, Card, Field, LanguageSelector, LoadingState, PageTitle, Screen } from '@/src/components/NativeUi'
+import * as Sharing from 'expo-sharing'
+import { File } from 'expo-file-system'
+import { createDatabaseBackup, restoreDatabaseBackup } from '@/src/services/backup'
 import {
   createEmployee,
   createStore,
@@ -63,6 +66,7 @@ export default function ManagementScreen() {
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<{ key: TranslationKey; values?: Record<string, string | number> } | null>(null)
   const [saving, setSaving] = useState(false)
+  const [backupBusy, setBackupBusy] = useState(false)
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
@@ -263,6 +267,64 @@ export default function ManagementScreen() {
     }
   }
 
+  const exportBackup = async () => {
+    if (!workspace) return
+    let file: File | null = null
+    setBackupBusy(true)
+    setError(null)
+    try {
+      file = await createDatabaseBackup(database, workspace, () => Crypto.randomUUID())
+      await Sharing.shareAsync(file.uri, {
+        mimeType: 'application/vnd.shopflow.backup',
+        dialogTitle: t('management.backupShareTitle'),
+      })
+      setMessage({ key: 'management.backupCreated' })
+    } catch (reason) {
+      setError(localizeError(reason, 'management.backupError'))
+    } finally {
+      if (file?.exists) {
+        try {
+          await file.delete()
+        } catch (reason) {
+          setError(localizeError(reason, 'management.backupError'))
+        }
+      }
+      setBackupBusy(false)
+    }
+  }
+
+  const chooseBackup = async () => {
+    try {
+      const picked = await File.pickFileAsync({ mimeTypes: '*/*' })
+      if (picked.canceled) return
+      const bytes = await picked.result.bytes()
+      Alert.alert(
+        t('management.restoreTitle'),
+        t('management.restoreConfirm'),
+        [
+          { text: t('common.cancel'), style: 'cancel' },
+          {
+            text: t('management.restore'),
+            style: 'destructive',
+            onPress: () => {
+              if (!workspace) return
+              setBackupBusy(true)
+              setError(null)
+              void restoreDatabaseBackup(database, workspace, bytes).then(async () => {
+                Alert.alert(t('management.restoreComplete'))
+                router.replace('/login')
+              }).catch((reason: unknown) => {
+                setError(localizeError(reason, 'management.backupError'))
+              }).finally(() => setBackupBusy(false))
+            },
+          },
+        ],
+      )
+    } catch (reason) {
+      setError(localizeError(reason, 'management.backupError'))
+    }
+  }
+
   if (loading) return <Screen><LoadingState label={t('common.loading')} /></Screen>
 
   if (!workspace) {
@@ -274,6 +336,12 @@ export default function ManagementScreen() {
       <PageTitle title={t('management.title')} subtitle={t('management.subtitle', { name: workspace.userName, role: translateRole(language, workspace.role) })} />
       {allowedPermissions.includes('sell') || allowedPermissions.includes('manage_inventory') ? (
         <Button label={t('accounts.open')} secondary onPress={() => router.push('/accounts')} />
+      ) : null}
+      {allowedPermissions.includes('sell') || allowedPermissions.includes('view_reports') ? (
+        <Button label={t('sales.open')} secondary onPress={() => router.push('./sales')} />
+      ) : null}
+      {allowedPermissions.includes('manage_settings') ? (
+        <Button label={t('syncQueue.open')} secondary onPress={() => router.push('./sync')} />
       ) : null}
       {allowedPermissions.includes('sell') || allowedPermissions.includes('manage_inventory') || allowedPermissions.includes('view_reports') ? (
         <Button label={t('cashbook.open')} secondary onPress={() => router.push('/cashbook')} />
@@ -467,6 +535,25 @@ export default function ManagementScreen() {
           </Text>
           </>
           ) : null}
+        </Card>
+      ) : null}
+
+      {allowedPermissions.includes('manage_settings') ? (
+        <Card>
+          <Text style={styles.sectionTitle}>{t('management.backupTitle')}</Text>
+          <Text style={styles.muted}>{t('management.backupWarning')}</Text>
+          <Button
+            label={backupBusy ? t('management.backupWorking') : t('management.backupExport')}
+            onPress={() => void exportBackup()}
+            disabled={backupBusy || saving}
+            secondary
+          />
+          <Button
+            label={backupBusy ? t('management.backupWorking') : t('management.backupRestore')}
+            onPress={() => void chooseBackup()}
+            disabled={backupBusy || saving}
+            secondary
+          />
         </Card>
       ) : null}
 

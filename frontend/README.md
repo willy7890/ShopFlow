@@ -8,7 +8,7 @@ npm install
 cp .env.example .env      # already present as .env
 npm run dev               # http://localhost:5173
 ```
-Sign in with **any email + password of 8+ characters** while `VITE_USE_MOCK=true`.
+Start the backend from `../backend` with `uvicorn app.main:app --reload`, then register a user or sign in with a backend account. Set `VITE_USE_MOCK=true` in `.env` to use the in-memory demo instead.
 Tip: an email starting with a role (`cashier@x.com`, `accountant@x.com`, `invmgr@x.com`, `storemgr@x.com`, `manager@x.com`) signs you in with that role so you can see permission-based menus.
 
 ## Scripts
@@ -21,8 +21,8 @@ Tip: an email starting with a role (`cashier@x.com`, `accountant@x.com`, `invmgr
 | `npm run preview` | Serve the production build locally |
 
 ## Connect the real FastAPI backend
-1. In `.env`: `VITE_API_BASE_URL=https://your-api/api/v1` and `VITE_USE_MOCK=false`.
-2. **Endpoint paths and JSON shapes in `src/api/http.ts` are ASSUMPTIONS** (no OpenAPI spec was available). Adjust them there; no screen calls axios directly.
+1. Set `VITE_API_BASE_URL=http://localhost:8000/api/v1` and `VITE_USE_MOCK=false` in `.env` (`.env.example` defaults to the real backend).
+2. The real adapter maps auth/business context, reports, customers, supplier balances, payments, and purchases to their FastAPI endpoints in `src/api/http.ts`. The Axios client sends the active `X-Business-ID` and bearer token automatically.
 3. The UI contract is `src/api/api.ts` (`Api` interface) with types in `src/api/types.ts`. The mock (`src/api/mock.ts`) documents the rules the backend must enforce:
    - `GET /auth/me` must return `{ user{role,permissions[]}, business, stores[], entitlements{features{},limits{}} }`. **Menus, guards and plan limits come only from this payload.**
    - Stock changes only through sales, purchases, restocks and adjustments (never direct edits).

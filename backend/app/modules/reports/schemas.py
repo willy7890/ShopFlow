@@ -41,6 +41,8 @@ class InventoryReportOut(BaseModel):
     total_variants: int = 0
     total_quantity: Decimal = Field(default=Decimal("0"))
     total_stock_value: Decimal = Field(default=Decimal("0"))
+    total_retail_value: Decimal = Field(default=Decimal("0"))
+    out_of_stock_variants: int = 0
     low_stock_items: list[InventoryAlertItemOut] = Field(default_factory=list)
     best_selling_products: list[dict] = Field(default_factory=list)
     slow_moving_products: list[dict] = Field(default_factory=list)

@@ -24,6 +24,32 @@ export interface CashSaleResult {
   balanceDueMinor: number
 }
 
+export interface SaleHistoryEntry {
+  id: string
+  saleNumber: string
+  totalMinor: number
+  paidMinor: number
+  balanceDueMinor: number
+  customerName: string | null
+  createdAt: string
+  syncState: 'pending' | 'synced' | 'failed' | 'conflict'
+  itemCount: number
+}
+
+export interface SaleDetail extends SaleHistoryEntry {
+  cashTenderedMinor: number
+  changeMinor: number
+  items: Array<{
+    id: string
+    productName: string
+    variantName: string
+    sku: string
+    quantity: number
+    unitPriceMinor: number
+    lineTotalMinor: number
+  }>
+}
+
 export async function createCashSale(
   database: SQLiteDatabase,
   workspace: Workspace,
@@ -268,6 +294,77 @@ export async function createCashSale(
   }
 }
 
+export async function listRecentSales(
+  database: SQLiteDatabase,
+  workspace: Workspace,
+  search = '',
+): Promise<SaleHistoryEntry[]> {
+  await assertSalesVisibility(database, workspace)
+  const query = search.trim()
+  return database.getAllAsync<SaleHistoryEntry>(
+    `SELECT sales.id, sales.sale_number AS saleNumber, sales.total_minor AS totalMinor,
+       sales.paid_minor AS paidMinor, sales.balance_due_minor AS balanceDueMinor,
+       sales.customer_name_snapshot AS customerName, sales.created_at AS createdAt,
+       sales.sync_state AS syncState, COUNT(sale_items.id) AS itemCount
+     FROM sales
+     LEFT JOIN sale_items ON sale_items.sale_id = sales.id
+     WHERE sales.business_id = ? AND sales.store_id = ?
+       AND (? = '' OR sales.sale_number LIKE ? OR COALESCE(sales.customer_name_snapshot, '') LIKE ?)
+     GROUP BY sales.id
+     ORDER BY sales.created_at DESC, sales.rowid DESC
+     LIMIT 100`,
+    workspace.businessId,
+    workspace.storeId,
+    query,
+    `%${query}%`,
+    `%${query}%`,
+  )
+}
+
+export async function getSaleDetail(
+  database: SQLiteDatabase,
+  workspace: Workspace,
+  saleId: string,
+): Promise<SaleDetail | null> {
+  await assertSalesVisibility(database, workspace)
+  const sale = await database.getFirstAsync<Omit<SaleDetail, 'items'>>(
+    `SELECT sales.id, sales.sale_number AS saleNumber, sales.total_minor AS totalMinor,
+       sales.paid_minor AS paidMinor, sales.balance_due_minor AS balanceDueMinor,
+       sales.customer_name_snapshot AS customerName, sales.created_at AS createdAt,
+       sales.sync_state AS syncState, sales.cash_tendered_minor AS cashTenderedMinor,
+       sales.change_minor AS changeMinor,
+       (SELECT COUNT(*) FROM sale_items WHERE sale_id = sales.id) AS itemCount
+     FROM sales
+     WHERE sales.id = ? AND sales.business_id = ? AND sales.store_id = ?`,
+    saleId,
+    workspace.businessId,
+    workspace.storeId,
+  )
+  if (!sale) return null
+  const items = await database.getAllAsync<SaleDetail['items'][number]>(
+    `SELECT id, product_name_snapshot AS productName, variant_name_snapshot AS variantName,
+       sku_snapshot AS sku, quantity, unit_price_minor AS unitPriceMinor,
+       line_total_minor AS lineTotalMinor
+     FROM sale_items WHERE sale_id = ? ORDER BY rowid`,
+    saleId,
+  )
+  return { ...sale, items }
+}
+
+async function assertSalesVisibility(database: SQLiteDatabase, workspace: Workspace): Promise<void> {
+  const role = await assertActiveWorkspace(database, workspace)
+  if (role === 'owner') return
+  const allowed = await database.getFirstAsync<{ allowed: number }>(
+    `SELECT 1 AS allowed FROM user_store_permissions
+     WHERE business_id = ? AND store_id = ? AND user_id = ?
+       AND permission IN ('sell', 'view_reports') LIMIT 1`,
+    workspace.businessId,
+    workspace.storeId,
+    workspace.userId,
+  )
+  if (!allowed) throw new Error('You do not have permission to view sales in the selected store.')
+}
+
 export interface SalesSummary {
   todayTotalMinor: number
   todayCount: number
@@ -291,7 +388,7 @@ export async function getSalesSummary(
        COALESCE(SUM(CASE WHEN date(created_at, '+3 hours') = ? THEN total_minor ELSE 0 END), 0) AS todayTotalMinor,
        COALESCE(SUM(CASE WHEN date(created_at, '+3 hours') = ? THEN 1 ELSE 0 END), 0) AS todayCount,
        (SELECT COUNT(*) FROM outbox
-        WHERE business_id = ? AND status IN ('pending', 'in_progress', 'failed')) AS pendingSyncCount
+        WHERE business_id = ? AND status IN ('pending', 'in_progress', 'failed', 'conflict')) AS pendingSyncCount
      FROM sales
      WHERE business_id = ? AND store_id = ?`,
     today,

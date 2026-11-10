@@ -47,7 +47,7 @@ interface ApiErrorResponse {
 
 export interface SyncPushResult {
   client_id: string
-  state: 'synced' | 'failed' | 'pending'
+  state: 'synced' | 'failed' | 'pending' | 'conflict'
   message: string | null
 }
 

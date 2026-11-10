@@ -17,7 +17,7 @@ import {
 } from '../src/repositories/catalog.ts'
 import { adjustStock, listRecentMovements } from '../src/repositories/inventory.ts'
 import { listProductAuditEvents } from '../src/repositories/productAudit.ts'
-import { createCashSale, getSalesSummary } from '../src/repositories/sales.ts'
+import { createCashSale, getSaleDetail, getSalesSummary, listRecentSales } from '../src/repositories/sales.ts'
 import {
   createCustomer,
   createSupplier,
@@ -62,6 +62,8 @@ import {
   updateEmployeeProfile,
 } from '../src/repositories/administration.ts'
 import { getLocalInsights, listNotificationQueue } from '../src/services/insights.ts'
+import { validateShopFlowBackup } from '../src/services/backupValidation.ts'
+import { listSyncQueue, retryFailedSyncItems } from '../src/repositories/syncQueue.ts'
 
 function openTestDatabase(path) {
   const sqlite = new DatabaseSync(path)
@@ -96,6 +98,7 @@ test('SQLite migrations, offline sale persistence and stock rollback are consist
     await migrateDatabase(database)
     await migrateDatabase(database)
     assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 10)
+    await validateShopFlowBackup(database)
 
     const workspace = await createWorkspace(database, {
       ownerName: 'Asha Mushi',
@@ -178,6 +181,22 @@ test('SQLite migrations, offline sale persistence and stock rollback are consist
     assert.equal((await listProducts(database, workspace))[0].quantity, 1)
     assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM sales')).count, 1)
     assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM payments')).count, 1)
+    const sales = await listRecentSales(database, workspace)
+    assert.equal(sales.length, 1)
+    assert.equal(sales[0].saleNumber, sale.saleNumber)
+    assert.equal(sales[0].itemCount, 1)
+    assert.equal((await listRecentSales(database, workspace, 'not found')).length, 0)
+    const saleDetail = await getSaleDetail(database, workspace, sale.saleId)
+    assert.equal(saleDetail.totalMinor, 1000)
+    assert.equal(saleDetail.paidMinor, 1000)
+    assert.equal(saleDetail.items[0].productName, 'Tea')
+    assert.equal(saleDetail.items[0].lineTotalMinor, 1000)
+    await switchStore(database, workspace, secondStore.id)
+    const otherStoreWorkspace = await getActiveWorkspace(database)
+    assert.ok(otherStoreWorkspace)
+    assert.deepEqual(await listRecentSales(database, otherStoreWorkspace), [])
+    assert.equal(await getSaleDetail(database, otherStoreWorkspace, sale.saleId), null)
+    await switchStore(database, otherStoreWorkspace, workspace.storeId)
 
     const outbox = await database.getFirstAsync(
       `SELECT client_id AS clientId, status, payload_json AS payloadJson
@@ -189,6 +208,27 @@ test('SQLite migrations, offline sale persistence and stock rollback are consist
     assert.equal(outboxPayload.items[0].unitPriceMinor, 500)
     assert.equal(outboxPayload.items[0].lineTotalMinor, 1000)
     assert.equal(outboxPayload.payments[0].amountMinor, 1000)
+    await database.runAsync(
+      `UPDATE outbox SET status = 'failed', last_error = 'Server unavailable'
+       WHERE client_id = ?`,
+      sale.saleId,
+    )
+    await database.runAsync("UPDATE sales SET sync_state = 'failed' WHERE id = ?", sale.saleId)
+    const queue = await listSyncQueue(database, workspace)
+    assert.ok(queue.some((item) => item.clientId === sale.saleId && item.lastError === 'Server unavailable'))
+    await database.runAsync(
+      `INSERT INTO app_settings (setting_key, setting_value) VALUES ('active_context', 'online')
+       ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value`,
+    )
+    assert.equal(await retryFailedSyncItems(database, workspace), 1)
+    assert.equal((await database.getFirstAsync('SELECT status FROM outbox WHERE client_id = ?', sale.saleId)).status, 'pending')
+    assert.equal((await database.getFirstAsync('SELECT sync_state AS state FROM sales WHERE id = ?', sale.saleId)).state, 'pending')
+    await database.runAsync("UPDATE outbox SET status = 'conflict' WHERE client_id = ?", sale.saleId)
+    assert.equal(await retryFailedSyncItems(database, workspace), 0)
+    assert.equal((await database.getFirstAsync('SELECT status FROM outbox WHERE client_id = ?', sale.saleId)).status, 'conflict')
+    await database.runAsync("UPDATE outbox SET status = 'pending' WHERE client_id = ?", sale.saleId)
+    await database.runAsync("UPDATE sales SET sync_state = 'pending' WHERE id = ?", sale.saleId)
+    await database.runAsync("UPDATE app_settings SET setting_value = 'local' WHERE setting_key = 'active_context'")
     const summary = await getSalesSummary(database, workspace)
     assert.equal(summary.todayTotalMinor, 1000)
     assert.equal(summary.todayCount, 1)
@@ -306,6 +346,7 @@ test('SQLite migrations, offline sale persistence and stock rollback are consist
       inventoryTracking: false,
       trackingMode: 'simple_sales',
     })
+
     preferences = await getLocalPreferences(database, ownerWorkspace)
     assert.equal(preferences.theme, 'dark')
     assert.equal(preferences.trackingMode, 'simple_sales')
@@ -330,6 +371,20 @@ test('SQLite migrations, offline sale persistence and stock rollback are consist
     assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM outbox')).count, 4)
     await clearActiveSession(database)
     await assert.rejects(listProducts(database, workspace), /session or store has changed/)
+  } finally {
+    database.close()
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('database backups reject non-ShopFlow and unsupported schemas', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'shopflow-backup-validation-'))
+  const database = openTestDatabase(join(directory, 'not-shopflow.db'))
+  try {
+    await database.execAsync('PRAGMA user_version = 1; CREATE TABLE arbitrary_data (value TEXT);')
+    await assert.rejects(validateShopFlowBackup(database), /does not contain a ShopFlow database/)
+    await database.execAsync('CREATE TABLE businesses (id TEXT); CREATE TABLE stores (id TEXT); CREATE TABLE users (id TEXT); CREATE TABLE app_settings (setting_key TEXT, setting_value TEXT); PRAGMA user_version = 11;')
+    await assert.rejects(validateShopFlowBackup(database), /unsupported ShopFlow database version/)
   } finally {
     database.close()
     rmSync(directory, { recursive: true, force: true })

@@ -66,6 +66,20 @@ class PurchaseOut(BaseModel):
     status: str; total_amount: Decimal; note: str | None
     model_config = ConfigDict(from_attributes=True)
 
+class PurchaseItemListOut(BaseModel):
+    variant_id: str
+    product_name: str
+    variant_name: str
+    quantity: Decimal
+    unit_cost: Decimal
+
+    model_config = ConfigDict(from_attributes=True)
+
+class PurchaseListOut(PurchaseOut):
+    created_at: datetime
+    paid_amount: Decimal = Decimal("0")
+    items: list[PurchaseItemListOut] = Field(default_factory=list)
+
 class BalanceOut(BaseModel):
     variant_id: str; store_id: str; quantity: Decimal; average_cost: Decimal
     model_config = ConfigDict(from_attributes=True)

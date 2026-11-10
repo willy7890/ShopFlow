@@ -433,6 +433,8 @@ def inventory_report(
     low_stock_items = []
     total_quantity = Decimal("0")
     total_stock_value = Decimal("0")
+    total_retail_value = Decimal("0")
+    out_of_stock_variants = 0
     for balance in balances:
         variant = db.query(ProductVariant).filter(ProductVariant.id == balance.variant_id).first()
         if not variant:
@@ -442,6 +444,9 @@ def inventory_report(
         total_quantity += quantity
         unit_cost = Decimal(str(balance.average_cost or 0))
         total_stock_value += quantity * unit_cost
+        total_retail_value += quantity * Decimal(str(variant.selling_price or 0))
+        if quantity <= 0:
+            out_of_stock_variants += 1
         if quantity <= Decimal(str(variant.low_stock_threshold or 0)):
             low_stock_items.append({
                 "variant_id": variant.id,
@@ -455,6 +460,8 @@ def inventory_report(
         total_variants=len(balances),
         total_quantity=_money(total_quantity),
         total_stock_value=_money(total_stock_value),
+        total_retail_value=_money(total_retail_value),
+        out_of_stock_variants=out_of_stock_variants,
         low_stock_items=[
             {
                 "variant_id": item["variant_id"],
@@ -491,11 +498,43 @@ def customer_debt_report(
         total_outstanding += outstanding
         if outstanding > 0:
             overdue += 1
+        ledger = (
+            db.query(CustomerLedgerEntry)
+            .filter(
+                CustomerLedgerEntry.business_id == membership.business_id,
+                CustomerLedgerEntry.customer_id == customer.id,
+            )
+            .order_by(CustomerLedgerEntry.created_at.asc())
+            .all()
+        )
+        aging = [Decimal("0"), Decimal("0"), Decimal("0")]
+        payments = []
+        now = datetime.now(timezone.utc)
+        for entry in ledger:
+            amount = Decimal(str(entry.amount))
+            if amount > 0:
+                created_at = entry.created_at
+                if created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=timezone.utc)
+                days_old = max(0, (now - created_at).days)
+                bucket = 0 if days_old <= 7 else 1 if days_old <= 30 else 2
+                aging[bucket] += amount
+            elif amount < 0:
+                payments.append(-amount)
+        for payment in payments:
+            remaining = payment
+            for bucket in (2, 1, 0):
+                applied = min(aging[bucket], remaining)
+                aging[bucket] -= applied
+                remaining -= applied
+                if remaining <= 0:
+                    break
         rows.append({
             "customer_id": customer.id,
             "name": customer.name,
             "phone": customer.phone,
             "outstanding_balance": str(outstanding),
+            "aging": [str(_money(amount)) for amount in aging],
         })
     return DebtorReportOut(
         customer_count=len(customers),
@@ -585,6 +624,10 @@ def slow_moving_products(
     for sale in sales:
         for item in sale.items:
             grouped[item.variant_id] = grouped.get(item.variant_id, Decimal("0")) + Decimal(str(item.quantity))
+    balances = {
+        row.variant_id: Decimal(str(row.quantity))
+        for row in _filtered_inventory(membership, db, store_id)
+    }
     rows = []
     for variant_id, qty in sorted(grouped.items(), key=lambda pair: pair[1])[:limit]:
         variant = db.query(ProductVariant).filter(ProductVariant.id == variant_id).first()
@@ -596,6 +639,7 @@ def slow_moving_products(
             "product_name": product.name if product else variant.name,
             "sku": variant.sku,
             "quantity_sold": str(qty),
+            "quantity_in_stock": str(balances.get(variant_id, Decimal("0"))),
         })
     return rows
 

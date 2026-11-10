@@ -130,7 +130,13 @@ async function performSync(
   await database.withExclusiveTransactionAsync(async (transaction) => {
     for (const row of rows) {
       const result = resultByClientId.get(row.client_id)
-      const status = result?.state === 'synced' ? 'synced' : 'failed'
+      const status = result?.state === 'synced'
+        ? 'synced'
+        : result?.state === 'conflict'
+          ? 'conflict'
+          : result?.state === 'pending'
+            ? 'pending'
+            : 'failed'
       const message = status === 'synced'
         ? null
         : result?.message ?? 'The server did not return a result for this sync item.'
@@ -175,7 +181,7 @@ async function performSync(
         }
       }
       if (status === 'synced') synced += 1
-      else failed += 1
+      else if (status === 'failed' || status === 'conflict') failed += 1
     }
   })
   let stockRefreshError: string | null = null

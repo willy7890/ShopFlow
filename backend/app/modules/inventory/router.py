@@ -7,7 +7,7 @@ from app.core.database import get_db
 from app.core.dependencies import get_business_membership, get_current_user, require_roles
 from app.modules.auth.models import User
 from app.modules.businesses.models import Membership, Store
-from app.modules.catalog.models import ProductVariant
+from app.modules.catalog.models import Product, ProductVariant
 from app.modules.inventory.models import Supplier, Purchase, PurchaseItem, InventoryBalance, StockMovement, SupplierPayment
 from app.modules.inventory.schemas import *
 
@@ -141,6 +141,50 @@ def create_purchase(payload: PurchaseCreate, membership: Membership = Depends(re
         db.commit(); db.refresh(purchase); return purchase
     except Exception:
         db.rollback(); raise
+
+@router.get("/purchases", response_model=list[PurchaseListOut])
+def list_purchases(membership: Membership = Depends(get_business_membership), db: Session = Depends(get_db)):
+    query = db.query(Purchase).filter(Purchase.business_id == membership.business_id)
+    if membership.role != "owner":
+        query = query.filter(Purchase.store_id.in_(membership.store_access or []))
+    purchases = query.order_by(Purchase.created_at.desc()).all()
+    results = []
+    for purchase in purchases:
+        items = db.query(PurchaseItem).filter(PurchaseItem.purchase_id == purchase.id).all()
+        item_rows = []
+        for item in items:
+            variant = db.query(ProductVariant).filter(ProductVariant.id == item.variant_id).first()
+            product = db.query(Product).filter(Product.id == variant.product_id).first() if variant else None
+            item_rows.append({
+                "variant_id": item.variant_id,
+                "product_name": product.name if product else "Unknown product",
+                "variant_name": variant.name if variant else "",
+                "quantity": item.quantity,
+                "unit_cost": item.unit_cost,
+            })
+        results.append(PurchaseListOut(
+            id=purchase.id,
+            business_id=purchase.business_id,
+            store_id=purchase.store_id,
+            supplier_id=purchase.supplier_id,
+            reference_number=purchase.reference_number,
+            status=purchase.status,
+            total_amount=purchase.total_amount,
+            note=purchase.note,
+            created_at=purchase.created_at,
+            items=item_rows,
+            paid_amount=(
+                db.query(func.coalesce(func.sum(SupplierPayment.amount), Decimal("0")))
+                .filter(
+                    SupplierPayment.business_id == membership.business_id,
+                    SupplierPayment.purchase_id == purchase.id,
+                    SupplierPayment.reversal_of_id.is_(None),
+                )
+                .scalar()
+                or Decimal("0")
+            ),
+        ))
+    return results
 
 @router.post("/purchases/{purchase_id}/receive", response_model=PurchaseOut)
 def receive_purchase(purchase_id: str, membership: Membership = Depends(require_roles("owner", "business_manager", "store_manager", "inventory_manager")), db: Session = Depends(get_db)):

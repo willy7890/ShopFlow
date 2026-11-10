@@ -18,7 +18,7 @@ export interface Sale {
   methods: Method[]; items: SaleItem[]; payments: Payment[]; voided?: boolean; voidDate?: string; sync?: SyncState; description?: string
 }
 export interface SalePayload { clientId: string; type: 'pos' | 'quick'; customer: string; items: SaleItem[]; payments: { method: Method; amount: number }[]; description?: string }
-export interface Purchase { no: string; date: string; supplier: string; lines: { variantId: number; name: string; qty: number; cost: number }[]; total: number; paid: number }
+export interface Purchase { no: string; date: string; supplier: string; lines: { variantId: string | number; name: string; qty: number; cost: number }[]; total: number; paid: number }
 export interface PurchasePayload { supplier: string; lines: { variantId: number; qty: number; cost: number }[]; paid: number }
 export interface Expense { id: number; date: string; category: string; amount: number; method: Method; store: string; description: string; receipt?: string; edited?: boolean }
 export interface Employee { id: string; name: string; email: string; role: Role; stores: string[]; status: 'active' | 'inactive' | 'invited' }

@@ -125,6 +125,11 @@ def test_customer_debtor_and_supplier_creditor_flows():
     assert statement_data["total_sales"] == "4000.00"
     assert statement_data["total_payments"] == "1500.00"
 
+    debtor_report = client.get("/api/v1/reports/customers", headers=headers)
+    assert debtor_report.status_code == 200, debtor_report.text
+    debtor = next(row for row in debtor_report.json()["customers"] if row["customer_id"] == customer_id)
+    assert sum(map(float, debtor["aging"])) == 2500
+
     unverified_customer_payment = client.post(
         f"/api/v1/customers/{customer_id}/payments",
         json={"amount": "2500", "method": "mobile_money", "reference": "MPESA-UNVERIFIED"},
@@ -142,6 +147,9 @@ def test_customer_debtor_and_supplier_creditor_flows():
     final_statement = client.get(f"/api/v1/customers/{customer_id}/statement", headers=headers)
     assert final_statement.status_code == 200, final_statement.text
     assert final_statement.json()["outstanding_balance"] == "0.00"
+    cleared_debtors = client.get("/api/v1/reports/customers", headers=headers)
+    cleared_customer = next(row for row in cleared_debtors.json()["customers"] if row["customer_id"] == customer_id)
+    assert cleared_customer["aging"] == ["0.00", "0.00", "0.00"]
 
     unverified_supplier_payment = client.post(
         f"/api/v1/inventory/suppliers/{supplier_id}/payments",
@@ -163,3 +171,8 @@ def test_customer_debtor_and_supplier_creditor_flows():
     assert supplier_payload["total_purchases"] == "4000.00"
     assert supplier_payload["total_payments"] == "2500.00"
     assert supplier_payload["outstanding_balance"] == "1500.00"
+
+    supplier_report = client.get("/api/v1/reports/suppliers", headers=headers)
+    assert supplier_report.status_code == 200, supplier_report.text
+    creditor = next(row for row in supplier_report.json()["suppliers"] if row["supplier_id"] == supplier_id)
+    assert creditor["payable_balance"] == "1500.00"

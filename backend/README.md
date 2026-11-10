@@ -46,9 +46,11 @@ Store operations additionally accept a `store_id` query/body value and validate 
 - `GET /api/v1/catalog/barcodes/{barcode}`
 - `POST /api/v1/inventory/suppliers`, `GET /api/v1/inventory/suppliers`
 - `POST /api/v1/inventory/purchases`
+- `GET /api/v1/inventory/purchases`
 - `POST /api/v1/inventory/purchases/{purchase_id}/receive`
 - `GET /api/v1/inventory/stock?store_id=<uuid>`
 - `GET /api/v1/inventory/movements?store_id=<uuid>`
+- `GET /api/v1/reports/sales`, `/profit`, `/expenses`, `/inventory`, `/customers`, `/suppliers`
 
 ## Purchase and stock rules
 A purchase starts as `draft`; stock is not increased until the explicit receive endpoint succeeds. Receiving a purchase is atomic: it adds stock balances and ledger movements, then marks the purchase received. Re-receiving is rejected. Stock quantity is stored in the variant's base unit. For example, receiving 2 cartons with `conversion_factor=24` adds 48 base units. Purchase cost is converted to base-unit cost for the weighted-average inventory valuation.

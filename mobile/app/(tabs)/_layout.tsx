@@ -44,6 +44,8 @@ export default function TabLayout() {
       <Tabs.Screen name="cashbook" options={{ href: null }} />
       <Tabs.Screen name="reports" options={{ href: null }} />
       <Tabs.Screen name="assistant" options={{ href: null }} />
+      <Tabs.Screen name="sales" options={{ href: null }} />
+      <Tabs.Screen name="sync" options={{ href: null }} />
     </Tabs>
   )
 }

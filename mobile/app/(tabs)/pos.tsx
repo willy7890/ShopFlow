@@ -206,6 +206,7 @@ export default function PosScreen() {
   return (
     <Screen>
       <PageTitle title={t('pos.title')} subtitle={t('pos.subtitle')} />
+      <Button label={t('sales.open')} secondary onPress={() => router.push('./sales')} />
       <Card>
         <Text style={styles.sectionTitle}>{t('pos.scanTitle')}</Text>
         <Field

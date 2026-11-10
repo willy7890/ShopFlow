@@ -5,8 +5,9 @@ export const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8
 export const http = axios.create({ baseURL: API_BASE, timeout: 15000 })
 
 http.interceptors.request.use((cfg) => {
-  const token = useAuth.getState().token
+  const { token, me } = useAuth.getState()
   if (token) cfg.headers.Authorization = `Bearer ${token}`
+  if (me?.business?.id) cfg.headers['X-Business-ID'] = me.business.id
   return cfg
 })
 
