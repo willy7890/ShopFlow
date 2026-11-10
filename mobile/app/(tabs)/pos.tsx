@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import * as Crypto from 'expo-crypto'
+import { useAudioPlayer } from 'expo-audio'
 import { useFocusEffect, useRouter } from 'expo-router'
 import { useSQLiteContext } from 'expo-sqlite'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
@@ -15,6 +16,8 @@ import { useI18n } from '@/src/i18n/I18nProvider'
 import { formatNumber } from '@/src/i18n/format'
 
 export default function PosScreen() {
+  const scanSuccessPlayer = useAudioPlayer(require('../../assets/sounds/scan-success.wav'))
+  const scanErrorPlayer = useAudioPlayer(require('../../assets/sounds/scan-error.wav'))
   const { colors } = useTheme()
   const { language, t, error: localizeError } = useI18n()
   const styles = createStyles(colors)
@@ -32,6 +35,7 @@ export default function PosScreen() {
   const [error, setError] = useState<string | null>(null)
   const [receipt, setReceipt] = useState<string | null>(null)
   const [scannerOpen, setScannerOpen] = useState(false)
+  const [scannerSoundEnabled, setScannerSoundEnabled] = useState(true)
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
 
@@ -41,6 +45,10 @@ export default function PosScreen() {
     try {
       const current = await getActiveWorkspace(database)
       setWorkspace(current)
+      const soundSetting = await database.getFirstAsync<{ setting_value: string }>(
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'scanner_sound_enabled'",
+      )
+      setScannerSoundEnabled(soundSetting?.setting_value !== 'false')
       const allowedToSell = current
         ? current.role === 'owner' || Boolean(await database.getFirstAsync<{ allowed: number }>(
           `SELECT 1 AS allowed FROM user_store_permissions
@@ -78,12 +86,12 @@ export default function PosScreen() {
   ), [cart, selected])
   const tenderedMinor = parseTzsAmount(cashTendered)
 
-  const changeQuantity = (product: LocalProduct, increment: number) => {
+  const changeQuantity = (product: LocalProduct, increment: number): boolean => {
     const current = cart[product.variantId] ?? 0
     const next = Math.max(0, current + increment)
     if (product.trackStock && next > product.quantity) {
       setError(t('pos.stockShort', { name: product.name, count: formatNumber(product.quantity, language) }))
-      return
+      return false
     }
     setError(null)
     setReceipt(null)
@@ -93,27 +101,58 @@ export default function PosScreen() {
       0,
     ) + (selected.some((item) => item.variantId === product.variantId) ? 0 : multiplyMoney(product.sellPriceMinor, next))
     setCashTendered(String(nextTotal))
+    return true
   }
 
-  const addBarcodeToCart = async (value: string) => {
+  const addBarcodeToCart = async (value: string): Promise<'added' | 'unknown' | 'error' | 'ignored'> => {
     const scannedBarcode = value.trim()
     setBarcode('')
-    if (!scannedBarcode) return
+    if (!scannedBarcode) return 'ignored'
     if (!workspace) {
       setError(t('pos.setupRequired'))
-      return
+      return 'error'
     }
     setError(null)
     try {
       const product = await findProductByBarcode(database, workspace, scannedBarcode)
       if (!product) {
         setUnknownBarcode(scannedBarcode)
-        return
+        return 'unknown'
       }
       setUnknownBarcode('')
-      changeQuantity(product, 1)
+      return changeQuantity(product, 1) ? 'added' : 'error'
     } catch (reason) {
       setError(localizeError(reason, 'pos.barcodeLookupError'))
+      return 'error'
+    }
+  }
+
+  const playScanFeedback = async (result: 'added' | 'unknown' | 'error' | 'ignored') => {
+    if (!scannerSoundEnabled || result === 'ignored') return
+    const player = result === 'added' ? scanSuccessPlayer : scanErrorPlayer
+    try {
+      await player.seekTo(0)
+      player.play()
+    } catch (reason) {
+      setError(localizeError(reason, 'pos.scanSoundError'))
+    }
+  }
+
+  const handleBarcodeInput = async (value: string) => {
+    await playScanFeedback(await addBarcodeToCart(value))
+  }
+
+  const toggleScannerSound = async () => {
+    const nextEnabled = !scannerSoundEnabled
+    try {
+      await database.runAsync(
+        `INSERT INTO app_settings (setting_key, setting_value) VALUES ('scanner_sound_enabled', ?)
+         ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value`,
+        String(nextEnabled),
+      )
+      setScannerSoundEnabled(nextEnabled)
+    } catch (reason) {
+      setError(localizeError(reason, 'pos.scanSoundSettingsError'))
     }
   }
 
@@ -173,13 +212,23 @@ export default function PosScreen() {
           label={t('products.barcode')}
           value={barcode}
           onChangeText={setBarcode}
-          onSubmitEditing={() => void addBarcodeToCart(barcode)}
+          onSubmitEditing={() => void handleBarcodeInput(barcode)}
           returnKeyType="search"
           autoCapitalize="none"
           autoCorrect={false}
         />
-        <Button label={t('pos.addBarcode')} secondary onPress={() => void addBarcodeToCart(barcode)} disabled={!barcode.trim()} />
+        <Button label={t('pos.addBarcode')} secondary onPress={() => void handleBarcodeInput(barcode)} disabled={!barcode.trim()} />
         <Button label={t('pos.openScanner')} onPress={() => setScannerOpen(true)} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ selected: scannerSoundEnabled }}
+          onPress={() => void toggleScannerSound()}
+          style={styles.soundToggle}
+        >
+          <Text style={styles.soundToggleText}>
+            {t(scannerSoundEnabled ? 'pos.scanSoundOn' : 'pos.scanSoundOff')}
+          </Text>
+        </Pressable>
         {unknownBarcode ? (
           <View style={styles.unknownBarcode}>
             <Text style={styles.muted}>{t('pos.unknownBarcode', { barcode: unknownBarcode })}</Text>
@@ -292,7 +341,7 @@ export default function PosScreen() {
         onClose={() => setScannerOpen(false)}
         onScanned={(value) => {
           setScannerOpen(false)
-          void addBarcodeToCart(value)
+          void handleBarcodeInput(value)
         }}
       />
     </Screen>
@@ -329,5 +378,7 @@ function createStyles(colors: ThemeColors) {
     success: { color: colors.success, fontSize: 14, fontWeight: '600' },
     empty: { gap: 14 },
     unknownBarcode: { borderTopColor: colors.border, borderTopWidth: 1, gap: 10, paddingTop: 12 },
+    soundToggle: { alignSelf: 'flex-end', minHeight: 40, justifyContent: 'center', paddingHorizontal: 8 },
+    soundToggleText: { color: colors.accent, fontSize: 13, fontWeight: '600' },
   })
 }
