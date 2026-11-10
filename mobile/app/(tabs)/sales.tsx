@@ -3,12 +3,16 @@ import * as Crypto from 'expo-crypto'
 import { useFocusEffect } from 'expo-router'
 import { useSQLiteContext } from 'expo-sqlite'
 import { cacheDirectory, deleteAsync, writeAsStringAsync } from 'expo-file-system/legacy'
+import * as Print from 'expo-print'
 import * as Sharing from 'expo-sharing'
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native'
 import { Button, Card, Field, LoadingState, PageTitle, Screen } from '@/src/components/NativeUi'
 import { formatTzs } from '@/src/domain/money'
+import { buildInvoiceHtml } from '@/src/domain/invoiceHtml'
 import { getSaleDetail, listRecentSales, type SaleDetail, type SaleHistoryEntry } from '@/src/repositories/sales'
 import { getActiveWorkspace, type Workspace } from '@/src/repositories/workspace'
+import { hasOnlineSession } from '@/src/services/api'
+import { refundSaleOnline } from '@/src/services/salesRefund'
 import { useI18n } from '@/src/i18n/I18nProvider'
 import { useTheme, type ThemeColors } from '@/src/theme/colors'
 
@@ -24,14 +28,26 @@ export default function SalesScreen() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [sharing, setSharing] = useState(false)
+  const [printing, setPrinting] = useState(false)
+  const [refunding, setRefunding] = useState(false)
+  const [onlineWorkspace, setOnlineWorkspace] = useState(false)
+  const [refundReason, setRefundReason] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
       const current = await getActiveWorkspace(database)
+      const [context, hasSession] = await Promise.all([
+        database.getFirstAsync<{ setting_value: string }>(
+          "SELECT setting_value FROM app_settings WHERE setting_key = 'active_context'",
+        ),
+        hasOnlineSession(),
+      ])
       setWorkspace(current)
+      setOnlineWorkspace(context?.setting_value === 'online' && hasSession)
       setSelectedSale(null)
+      setRefundReason('')
       setSales(current ? await listRecentSales(database, current, search) : [])
     } finally {
       setLoading(false)
@@ -49,8 +65,54 @@ export default function SalesScreen() {
       const detail = await getSaleDetail(database, workspace, sale.id)
       if (!detail) throw new Error(t('sales.missing'))
       setSelectedSale((current) => current?.id === detail.id ? null : detail)
+      setRefundReason(detail.refundStatus === 'pending' ? detail.refundReason ?? '' : '')
     } catch (reason) {
       setError(localizeError(reason, 'sales.loadError'))
+    }
+  }
+
+  const confirmRefund = (sale: SaleDetail) => {
+    const reason = refundReason.trim()
+    if (reason.length < 2) {
+      setError(t('sales.refundReasonRequired'))
+      return
+    }
+    Alert.alert(
+      t('sales.refundConfirmTitle'),
+      t('sales.refundConfirmMessage', { number: sale.saleNumber }),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('sales.refundConfirmAction'),
+          style: 'destructive',
+          onPress: () => void performRefund(sale, reason),
+        },
+      ],
+    )
+  }
+
+  const performRefund = async (sale: SaleDetail, reason: string) => {
+    if (!workspace) return
+    setRefunding(true)
+    setError(null)
+    try {
+      await refundSaleOnline(database, workspace, sale, reason, Crypto.randomUUID)
+      await load()
+      const refreshed = await getSaleDetail(database, workspace, sale.id)
+      setSelectedSale(refreshed)
+    } catch (reason) {
+      setError(localizeError(reason, 'sales.refundError'))
+      try {
+        const refreshed = await getSaleDetail(database, workspace, sale.id)
+        if (refreshed && (refreshed.refundMinor || refreshed.refundStatus === 'pending')) {
+          setSelectedSale(refreshed)
+          setRefundReason(refreshed.refundReason ?? '')
+        }
+      } catch (refreshError) {
+        setError(`${localizeError(reason, 'sales.refundError')} ${localizeError(refreshError, 'sales.loadError')}`)
+      }
+    } finally {
+      setRefunding(false)
     }
   }
 
@@ -83,6 +145,9 @@ export default function SalesScreen() {
         `${t('sales.total')}: ${formatTzs(sale.totalMinor, language)}`,
         `${t('sales.paid')}: ${formatTzs(sale.paidMinor, language)}`,
         `${t('sales.balanceDue')}: ${formatTzs(sale.balanceDueMinor, language)}`,
+        ...(sale.refundMinor > 0
+          ? [`${t('sales.refundAmount')}: ${formatTzs(sale.refundMinor, language)}`]
+          : []),
         `${t('sales.cashTendered')}: ${formatTzs(sale.cashTenderedMinor, language)}`,
         `${t('sales.change')}: ${formatTzs(sale.changeMinor, language)}`,
       ].join('\n')
@@ -102,6 +167,81 @@ export default function SalesScreen() {
         }
       }
       setSharing(false)
+    }
+  }
+
+  const invoiceHtml = (sale: SaleDetail) => {
+    const date = formatDate(sale.createdAt, language)
+    return buildInvoiceHtml({
+      businessName: workspace?.businessName ?? '',
+      storeName: workspace?.storeName ?? '',
+      invoiceLabel: t('sales.invoice'),
+      saleNumberLabel: t('sales.number'),
+      dateLabel: t('sales.date'),
+      customerLabel: t('sales.customer'),
+      walkInLabel: t('sales.walkIn'),
+      itemLabel: t('sales.item'),
+      quantityLabel: t('sales.quantity'),
+      unitPriceLabel: t('sales.unitPrice'),
+      totalLabel: t('sales.total'),
+      paidLabel: t('sales.paid'),
+      balanceDueLabel: t('sales.balanceDue'),
+      cashTenderedLabel: t('sales.cashTendered'),
+      changeLabel: t('sales.change'),
+      refundLabel: t('sales.refundAmount'),
+      saleNumber: sale.saleNumber,
+      date,
+      customerName: sale.customerName,
+      total: formatTzs(sale.totalMinor, language),
+      paid: formatTzs(sale.paidMinor, language),
+      balanceDue: formatTzs(sale.balanceDueMinor, language),
+      cashTendered: formatTzs(sale.cashTenderedMinor, language),
+      change: formatTzs(sale.changeMinor, language),
+      refund: sale.refundMinor > 0 ? formatTzs(sale.refundMinor, language) : null,
+      items: sale.items.map((item) => ({
+        quantity: String(item.quantity),
+        name: `${item.productName} ${item.variantName}`,
+        unitPrice: formatTzs(item.unitPriceMinor, language),
+        lineTotal: formatTzs(item.lineTotalMinor, language),
+      })),
+    })
+  }
+
+  const shareInvoicePdf = async (sale: SaleDetail) => {
+    let fileUri: string | null = null
+    setSharing(true)
+    setError(null)
+    try {
+      const file = await Print.printToFileAsync({ html: invoiceHtml(sale) })
+      fileUri = file.uri
+      await Sharing.shareAsync(file.uri, {
+        mimeType: 'application/pdf',
+        dialogTitle: t('sales.shareInvoiceTitle', { number: sale.saleNumber }),
+        UTI: 'com.adobe.pdf',
+      })
+    } catch (reason) {
+      setError(localizeError(reason, 'sales.invoiceError'))
+    } finally {
+      if (fileUri) {
+        try {
+          await deleteAsync(fileUri, { idempotent: true })
+        } catch (reason) {
+          setError(localizeError(reason, 'sales.invoiceError'))
+        }
+      }
+      setSharing(false)
+    }
+  }
+
+  const printInvoice = async (sale: SaleDetail) => {
+    setPrinting(true)
+    setError(null)
+    try {
+      await Print.printAsync({ html: invoiceHtml(sale) })
+    } catch (reason) {
+      setError(localizeError(reason, 'sales.invoiceError'))
+    } finally {
+      setPrinting(false)
     }
   }
 
@@ -141,10 +281,58 @@ export default function SalesScreen() {
               ))}
               <SummaryLine label={t('sales.paid')} value={formatTzs(selectedSale.paidMinor, language)} colors={colors} />
               <SummaryLine label={t('sales.balanceDue')} value={formatTzs(selectedSale.balanceDueMinor, language)} colors={colors} />
+              {selectedSale.refundMinor > 0 ? (
+                <SummaryLine
+                  label={selectedSale.refundStatus === 'refunded' ? t('sales.refunded') : t('sales.refundAmount')}
+                  value={formatTzs(selectedSale.refundMinor, language)}
+                  colors={colors}
+                />
+              ) : null}
+              {selectedSale.refundStatus === 'pending' ? (
+                <Text style={styles.muted}>{t('sales.refundPending')}</Text>
+              ) : null}
+              {onlineWorkspace
+                && selectedSale.syncState === 'synced'
+                && selectedSale.refundMinor === 0
+                && (selectedSale.refundStatus === null || selectedSale.refundStatus === 'pending')
+                && selectedSale.paidMinor === selectedSale.totalMinor
+                && selectedSale.balanceDueMinor === 0 ? (
+                  <>
+                    <Field
+                      label={t('sales.refundReason')}
+                      value={refundReason}
+                      onChangeText={setRefundReason}
+                      maxLength={220}
+                      editable={selectedSale.refundStatus !== 'pending'}
+                    />
+                    <Text style={styles.muted}>{t('sales.refundOnlineOnly')}</Text>
+                    <Button
+                      label={refunding
+                        ? t('sales.refunding')
+                        : selectedSale.refundStatus === 'pending'
+                          ? t('sales.retryRefund')
+                          : t('sales.refundSale')}
+                      onPress={() => confirmRefund(selectedSale)}
+                      disabled={refunding}
+                      secondary
+                    />
+                  </>
+                ) : null}
               <Button
                 label={sharing ? t('sales.sharing') : t('sales.shareReceipt')}
                 onPress={() => void shareReceipt(selectedSale)}
-                disabled={sharing}
+                disabled={sharing || printing}
+                secondary
+              />
+              <Button
+                label={sharing ? t('sales.invoicePreparing') : t('sales.shareInvoice')}
+                onPress={() => void shareInvoicePdf(selectedSale)}
+                disabled={sharing || printing}
+              />
+              <Button
+                label={printing ? t('sales.printingInvoice') : t('sales.printInvoice')}
+                onPress={() => void printInvoice(selectedSale)}
+                disabled={sharing || printing}
                 secondary
               />
             </View>

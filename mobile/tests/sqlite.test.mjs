@@ -17,7 +17,15 @@ import {
 } from '../src/repositories/catalog.ts'
 import { adjustStock, listRecentMovements } from '../src/repositories/inventory.ts'
 import { listProductAuditEvents } from '../src/repositories/productAudit.ts'
-import { createCashSale, getSaleDetail, getSalesSummary, listRecentSales } from '../src/repositories/sales.ts'
+import {
+  createCashSale,
+  completeSaleRefund,
+  getSaleRefundRequest,
+  getSaleDetail,
+  getSalesSummary,
+  listRecentSales,
+  prepareSaleRefund,
+} from '../src/repositories/sales.ts'
 import {
   createCustomer,
   createSupplier,
@@ -97,7 +105,7 @@ test('SQLite migrations, offline sale persistence and stock rollback are consist
   try {
     await migrateDatabase(database)
     await migrateDatabase(database)
-    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 10)
+    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 11)
     await validateShopFlowBackup(database)
 
     const workspace = await createWorkspace(database, {
@@ -234,6 +242,37 @@ test('SQLite migrations, offline sale persistence and stock rollback are consist
     assert.equal(summary.todayCount, 1)
     assert.equal(summary.pendingSyncCount, 2)
     assert.deepEqual({ ...await getCashbookTotals(database, workspace) }, { incomeMinor: 1000, expenseMinor: 0 })
+
+    const refundRequest = {
+      saleId: sale.saleId,
+      serverSaleId: 'remote-sale-1',
+      reason: 'Customer returned the items',
+      idempotencyKey: `mobile-full-refund:${sale.saleId}`,
+    }
+    const pendingRefund = await prepareSaleRefund(database, workspace, refundRequest, randomUUID)
+    assert.equal(pendingRefund.status, 'pending')
+    assert.equal((await getSaleRefundRequest(database, workspace, sale.saleId)).reason, refundRequest.reason)
+    const retriedRefund = await prepareSaleRefund(database, workspace, refundRequest, randomUUID)
+    assert.deepEqual({ ...retriedRefund }, { ...pendingRefund })
+    await completeSaleRefund(database, workspace, {
+      ...pendingRefund,
+      amountMinor: 1000,
+      status: 'refunded',
+    }, randomUUID)
+    await completeSaleRefund(database, workspace, {
+      ...pendingRefund,
+      amountMinor: 1000,
+      status: 'refunded',
+    }, randomUUID)
+    const refundedSale = await getSaleDetail(database, workspace, sale.saleId)
+    assert.equal(refundedSale.refundMinor, 1000)
+    assert.equal(refundedSale.refundStatus, 'refunded')
+    assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM sale_refunds')).count, 1)
+    assert.deepEqual({ ...await getCashbookTotals(database, workspace) }, { incomeMinor: 1000, expenseMinor: 1000 })
+    await assert.rejects(
+      prepareSaleRefund(database, workspace, { ...refundRequest, idempotencyKey: 'different-refund' }, randomUUID),
+      /different refund request/,
+    )
 
     await assert.rejects(
       createCashSale(database, workspace, {
@@ -383,7 +422,7 @@ test('database backups reject non-ShopFlow and unsupported schemas', async () =>
   try {
     await database.execAsync('PRAGMA user_version = 1; CREATE TABLE arbitrary_data (value TEXT);')
     await assert.rejects(validateShopFlowBackup(database), /does not contain a ShopFlow database/)
-    await database.execAsync('CREATE TABLE businesses (id TEXT); CREATE TABLE stores (id TEXT); CREATE TABLE users (id TEXT); CREATE TABLE app_settings (setting_key TEXT, setting_value TEXT); PRAGMA user_version = 11;')
+    await database.execAsync('CREATE TABLE businesses (id TEXT); CREATE TABLE stores (id TEXT); CREATE TABLE users (id TEXT); CREATE TABLE app_settings (setting_key TEXT, setting_value TEXT); PRAGMA user_version = 12;')
     await assert.rejects(validateShopFlowBackup(database), /unsupported ShopFlow database version/)
   } finally {
     database.close()
@@ -711,7 +750,7 @@ test('version 1 local business data upgrades in place and persists the default l
 
     await migrateDatabase(database)
     await migrateDatabase(database)
-    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 10)
+    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 11)
     assert.equal((await database.getFirstAsync('SELECT name FROM businesses WHERE id = ?', 'business-v1')).name, 'Existing Shop')
     assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM user_store_permissions')).count, 8)
     assert.equal((await getActiveWorkspace(database)).userId, 'owner-v1')

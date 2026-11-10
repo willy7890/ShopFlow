@@ -37,8 +37,9 @@ class SaleRefundItem(BaseModel):
 class SaleRefundCreate(BaseModel):
     reason: str = Field(min_length=2, max_length=220)
     note: str | None = None
-    amount: Decimal | None = None
+    amount: Decimal | None = Field(default=None, gt=0)
     items: list[SaleRefundItem] = Field(default_factory=list)
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class SaleItemOut(BaseModel):

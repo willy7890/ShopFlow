@@ -12,8 +12,9 @@ The Expo/React Native app covers local business setup, catalog/inventory, POS, c
 - Added authenticated `GET /api/v1/businesses/access` so mobile can display active business/store assignments and permissions.
 - Added business/store selection, server catalog/store-stock download, authenticated assistant access and idempotent outbox sync for sales, customer/supplier accounts and cashbook entries.
 - Added store-scoped sales history and shareable text receipts.
+- Added online full-sale refunds for fully paid, synced sales, with confirmation, idempotent API retries, local refund records/cashbook expense and server-stock refresh.
 - The mobile build currently supports TZS and whole-number catalog prices/stock only. Product edits and stock adjustments on mobile do not sync; there is no remote-to-mobile transaction pull or conflict-review UI. Mobile data can therefore diverge from web data.
-- Offline authentication continuity, complete cross-device reconciliation, refunds, printable invoices and catalog mutation sync remain incomplete. Review sync failures and server stock before using mobile as the only point of sale.
+- Offline authentication continuity, complete cross-device reconciliation, partial/credit/offline mobile refunds and catalog mutation sync remain incomplete. The backend refund endpoint records idempotency keys and prevents cumulative item over-returns. Review sync failures and server stock before using mobile as the only point of sale.
 
 ## Phase 1 — SQLite foundation
 
@@ -45,7 +46,7 @@ The Expo/React Native app covers local business setup, catalog/inventory, POS, c
 - No Android SDK command-line tools/platforms are installed in the current Mac environment. There is no verified Gradle build, APK or physical-device/airplane-mode test.
 - SQLite is not encrypted at rest. Local authentication controls app workflows on this device; it is not protection against someone who can extract the database or modify the app.
 - Backend priorities 1–8 have implementations in the domain routers and tests. Priority 9 now includes configurable subscription plans, business subscription history and entitlements, secret-based Super Admin bootstrap, tenant/user/store administration, platform usage analytics and audit logs. Priority 10 is blocked: the project targets Vodacom Tanzania (TZS), and no provider endpoints are enabled until the official merchant API contract is available. Remote AI/push notifications and release testing remain future work.
-- Refunds, printable invoice documents, fractional stock units, full mobile business-data API integration, sync conflict resolution, subscription/Super Admin mobile workflows and iOS device testing remain future work. Barcode scanning, remote catalog download, partial outbox sync, sync queue inspection/manual retry, sales history/receipts and database backup/restore are implemented.
+- Partial, credit-sale and offline mobile refunds; fractional stock units; full mobile business-data API integration; sync conflict resolution; subscription/Super Admin mobile workflows; and iOS device testing remain future work. Online full refunds for synced, fully paid sales, printable PDF invoices and backend idempotency/cumulative quantity safeguards are implemented. Barcode scanning, remote catalog download, partial outbox sync, sync queue inspection/manual retry, sales history/receipts and database backup/restore are implemented.
 - Backup restore validates a ShopFlow SQLite database and supported schema before replacement, requires explicit confirmation, clears online tokens and the active local user, and returns to sign-in. Backup files are unencrypted and include sensitive shop records and password verifiers; protect exported files accordingly.
 - Vodacom Tanzania M-Pesa requires the official merchant API contract, credentials, callback-verification rules, and status-query semantics. No mobile-money payment is auto-confirmed or exposed by the backend while those requirements are missing.
 - Subscription prices and feature matrices are not seeded. A Super Admin must configure plans; the API exposes effective entitlements, while legacy business routes are not gated until the product's per-feature/limit matrix is defined.
@@ -54,9 +55,9 @@ The Expo/React Native app covers local business setup, catalog/inventory, POS, c
 
 ## Validation record
 
-- Backend `python3 -m pytest -q`: passed, 10 tests, including authenticated business access.
+- Backend sales/refund integration test: passed; backend suite excluding `test_reports_flow.py`: 15 passed. The full suite has one reports-flow assertion mismatch in the already-modified reports worktree.
 - Mobile `npm run typecheck`: passed.
-- Mobile `npm test`: passed, including SQLite sales persistence, store-scoped workspace activation and remote sync integration coverage.
+- Mobile `npm test`: passed, 16 tests including pending refund recovery, invoice HTML escaping, SQLite migrations, and store-scoped workspace activation.
 - Android export passed; it produces an Expo JavaScript bundle, not an APK.
 - `npm audit --audit-level=moderate`: 0 vulnerabilities reported.
 - Gradle/APK, Android device and airplane-mode checks are still pending because the Android SDK is unavailable.

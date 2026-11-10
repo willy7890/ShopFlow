@@ -1,7 +1,10 @@
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
+import hashlib
+import json
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -412,35 +415,152 @@ def refund_sale(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    sale = _sale_for_business(sale_id, membership, db)
-    refund_amount = _safe_decimal(payload.amount) if payload.amount is not None else sale.total_amount
+    sale = (
+        db.query(Sale)
+        .filter(Sale.id == sale_id, Sale.business_id == membership.business_id)
+        .with_for_update()
+        .first()
+    )
+    if not sale:
+        raise HTTPException(status_code=404, detail="Sale not found.")
+    if membership.role != "owner" and sale.store_id not in (membership.store_access or []):
+        raise HTTPException(status_code=403, detail="You do not have access to this sale's store.")
+
+    request_data = payload.model_dump(mode="json", exclude={"idempotency_key"})
+    request_hash = hashlib.sha256(
+        json.dumps(request_data, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    if payload.idempotency_key:
+        existing_refund = (
+            db.query(SaleRefund)
+            .filter(
+                SaleRefund.sale_id == sale.id,
+                SaleRefund.idempotency_key == payload.idempotency_key,
+            )
+            .first()
+        )
+        if existing_refund:
+            if existing_refund.request_hash != request_hash:
+                raise HTTPException(status_code=409, detail="This refund idempotency key was already used with different details.")
+            return RefundOut(
+                sale_id=sale.id,
+                refund_amount=existing_refund.amount,
+                remaining_balance=sale.balance_due,
+                status=sale.status,
+                note=existing_refund.note,
+            )
+
+    sale_items = db.query(SaleItem).filter(SaleItem.sale_id == sale.id).order_by(SaleItem.id).all()
+    previous_quantities: dict[str, Decimal] = {}
+    previous_refunds = db.query(SaleRefund).filter(SaleRefund.sale_id == sale.id).all()
+    previous_refund_amount = sum(
+        (Decimal(str(existing_refund.amount)) for existing_refund in previous_refunds),
+        Decimal("0"),
+    )
+    for existing_refund in previous_refunds:
+        if not existing_refund.items_json:
+            continue
+        for item in json.loads(existing_refund.items_json):
+            variant_id = str(item["variant_id"])
+            previous_quantities[variant_id] = (
+                previous_quantities.get(variant_id, Decimal("0"))
+                + Decimal(str(item["quantity"]))
+            )
+
+    # Older refunds referenced the sale directly in stock movement records.
+    legacy_movements = (
+        db.query(StockMovement.variant_id, StockMovement.quantity_delta)
+        .filter(
+            StockMovement.reference_type == "sale_refund",
+            StockMovement.reference_id == sale.id,
+            StockMovement.movement_type == "refund",
+        )
+        .all()
+    )
+    for variant_id, quantity in legacy_movements:
+        previous_quantities[variant_id] = (
+            previous_quantities.get(variant_id, Decimal("0")) + Decimal(str(quantity))
+        )
+
+    sold_quantities: dict[str, Decimal] = {}
+    for item in sale_items:
+        sold_quantities[item.variant_id] = (
+            sold_quantities.get(item.variant_id, Decimal("0")) + Decimal(str(item.quantity))
+        )
+    remaining_quantities = {
+        variant_id: max(
+            Decimal("0"),
+            quantity - previous_quantities.get(variant_id, Decimal("0")),
+        )
+        for variant_id, quantity in sold_quantities.items()
+    }
+
+    refund_items: dict[str, Decimal] = {}
+    if payload.items:
+        for item in payload.items:
+            refund_items[item.variant_id] = (
+                refund_items.get(item.variant_id, Decimal("0")) + _safe_decimal(item.quantity)
+            )
+    elif payload.amount is None:
+        refund_items = {
+            variant_id: quantity
+            for variant_id, quantity in remaining_quantities.items()
+            if quantity > 0
+        }
+
+    selected_total = Decimal("0")
+    for variant_id, quantity in refund_items.items():
+        if variant_id not in sold_quantities:
+            raise HTTPException(status_code=404, detail=f"Variant {variant_id} was not sold in this sale.")
+        if quantity > remaining_quantities[variant_id]:
+            raise HTTPException(status_code=400, detail=f"Refund quantity for {variant_id} exceeds the unrefunded quantity sold.")
+
+        quantity_to_refund = quantity
+        quantity_previously_refunded = previous_quantities.get(variant_id, Decimal("0"))
+        for original in (item for item in sale_items if item.variant_id == variant_id):
+            previously_on_line = min(Decimal(str(original.quantity)), quantity_previously_refunded)
+            quantity_previously_refunded -= previously_on_line
+            available_on_line = Decimal(str(original.quantity)) - previously_on_line
+            line_quantity = min(available_on_line, quantity_to_refund)
+            selected_total += Decimal(str(original.unit_price)) * line_quantity
+            quantity_to_refund -= line_quantity
+            if quantity_to_refund <= 0:
+                break
+
+    selected_total = selected_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    refund_amount = _safe_decimal(payload.amount) if payload.amount is not None else selected_total
     if refund_amount <= 0:
         raise HTTPException(status_code=422, detail="Refund amount must be greater than zero.")
-    if refund_amount > sale.paid_amount + Decimal("0.01"):
+    if refund_amount != refund_amount.quantize(Decimal("0.01")):
+        raise HTTPException(status_code=422, detail="Refund amount cannot contain fractions of a cent.")
+    if refund_amount > max(Decimal("0"), sale.paid_amount - previous_refund_amount):
         raise HTTPException(status_code=400, detail="Refund amount cannot exceed the amount already paid on this sale.")
+    if refund_items and abs(selected_total - refund_amount) > Decimal("0.01"):
+        raise HTTPException(status_code=422, detail="Refund amount does not match the selected item totals.")
+    refund_total = refund_amount
 
-    if payload.items:
-        item_map = {item.variant_id: item for item in db.query(SaleItem).filter(SaleItem.sale_id == sale.id).all()}
-        selected_total = Decimal("0")
-        for item in payload.items:
-            original = item_map.get(item.variant_id)
-            if not original:
-                raise HTTPException(status_code=404, detail=f"Variant {item.variant_id} was not sold in this sale.")
-            if item.quantity > original.quantity:
-                raise HTTPException(status_code=400, detail=f"Refund quantity for {item.variant_id} exceeds the original quantity sold.")
-            selected_total += original.unit_price * item.quantity
-        if payload.amount is not None and abs(selected_total - refund_amount) > Decimal("0.01"):
-            raise HTTPException(status_code=422, detail="Refund amount does not match the selected item totals.")
-        refund_total = selected_total
-    else:
-        refund_total = refund_amount
+    refund = SaleRefund(
+        sale_id=sale.id,
+        amount=refund_total,
+        reason=payload.reason,
+        note=payload.note,
+        idempotency_key=payload.idempotency_key,
+        request_hash=request_hash if payload.idempotency_key else None,
+        items_json=json.dumps(
+            [{"variant_id": variant_id, "quantity": str(quantity)} for variant_id, quantity in refund_items.items()],
+            separators=(",", ":"),
+        ),
+        created_by=current_user.id,
+    )
+    db.add(refund)
+    db.flush()
 
-    for item in payload.items or [
-        type("Line", (), {"variant_id": sale_item.variant_id, "quantity": sale_item.quantity})() for sale_item in db.query(SaleItem).filter(SaleItem.sale_id == sale.id).all()
-    ]:
-        variant = db.query(ProductVariant).filter(ProductVariant.id == item.variant_id, ProductVariant.business_id == membership.business_id).first()
+    for variant_id, quantity in refund_items.items():
+        variant = db.query(ProductVariant).filter(ProductVariant.id == variant_id, ProductVariant.business_id == membership.business_id).first()
         if not variant:
-            raise HTTPException(status_code=404, detail=f"Variant {item.variant_id} no longer exists in this business.")
+            raise HTTPException(status_code=404, detail=f"Variant {variant_id} no longer exists in this business.")
+        if not variant.track_stock:
+            continue
         inventory_balance = (
             db.query(InventoryBalance)
             .filter(
@@ -451,11 +571,8 @@ def refund_sale(
             .with_for_update()
             .first()
         )
-        added_quantity = _safe_decimal(item.quantity)
-        sale_item = db.query(SaleItem).filter(
-            SaleItem.sale_id == sale.id,
-            SaleItem.variant_id == variant.id,
-        ).first()
+        added_quantity = quantity
+        sale_item = next((line for line in sale_items if line.variant_id == variant.id), None)
         unit_cost = sale_item.unit_cost if sale_item and sale_item.unit_cost is not None else variant.purchase_price
         if inventory_balance is None:
             inventory_balance = InventoryBalance(
@@ -478,7 +595,7 @@ def refund_sale(
                 quantity_delta=added_quantity,
                 unit_cost=unit_cost,
                 reference_type="sale_refund",
-                reference_id=sale.id,
+                reference_id=refund.id,
                 note=payload.reason,
                 created_by=current_user.id,
             )
@@ -500,15 +617,6 @@ def refund_sale(
             after={"quantity": str(inventory_balance.quantity), "reason": "Sale refund"},
         )
 
-    refund = SaleRefund(
-        sale_id=sale.id,
-        amount=refund_total,
-        reason=payload.reason,
-        note=payload.note,
-        created_by=current_user.id,
-    )
-    db.add(refund)
-    db.flush()
     db.add(CashbookEntry(
         business_id=membership.business_id,
         store_id=sale.store_id,
@@ -521,13 +629,36 @@ def refund_sale(
         note=payload.reason,
         created_by=current_user.id,
     ))
-    sale.paid_amount = sale.paid_amount - refund_total
-    sale.balance_due = max(Decimal("0"), sale.total_amount - sale.paid_amount)
+    cumulative_refunds = previous_refund_amount + refund_total
     sale.status = _normalize_sale_status(sale.total_amount, sale.paid_amount)
-    if sale.paid_amount <= 0:
+    if cumulative_refunds >= sale.total_amount:
         sale.status = "refunded"
     db.add(SalePayment(sale_id=sale.id, method="refund", amount=refund_total, status="confirmed", note=payload.reason))
-    db.commit(); db.refresh(sale)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        if not payload.idempotency_key:
+            raise
+        existing_refund = (
+            db.query(SaleRefund)
+            .filter(
+                SaleRefund.sale_id == sale.id,
+                SaleRefund.idempotency_key == payload.idempotency_key,
+            )
+            .first()
+        )
+        if not existing_refund or existing_refund.request_hash != request_hash:
+            raise
+        sale = _sale_for_business(sale.id, membership, db)
+        return RefundOut(
+            sale_id=sale.id,
+            refund_amount=existing_refund.amount,
+            remaining_balance=sale.balance_due,
+            status=sale.status,
+            note=existing_refund.note,
+        )
+    db.refresh(sale)
     return RefundOut(
         sale_id=sale.id,
         refund_amount=refund_total,

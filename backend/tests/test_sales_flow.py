@@ -150,15 +150,63 @@ def test_sales_flow_creates_and_refunds_inventory_adjusted_sales():
     stock_value = next(item for item in balances if item["variant_id"] == variant_id)
     assert stock_value["quantity"] == "3.000" or stock_value["quantity"] == "3.0" or stock_value["quantity"] == "3"
 
+    refund_payload = {
+        "reason": "Customer changed mind",
+        "amount": "2000.00",
+        "items": [{"variant_id": variant_id, "quantity": "1"}],
+        "idempotency_key": "mobile-refund-1",
+    }
     refund_response = client.post(
         f"/api/v1/sales/{sale['id']}/refund",
-        json={"reason": "Customer changed mind", "amount": "2000.00", "items": [{"variant_id": variant_id, "quantity": "1"}]},
+        json=refund_payload,
         headers={**headers, "X-Store-ID": store_id},
     )
     assert refund_response.status_code == 200, refund_response.text
     refund = refund_response.json()
     assert refund["refund_amount"] == "2000.00"
     assert refund["status"] in {"partial", "completed", "refunded"}
+
+    replay_response = client.post(
+        f"/api/v1/sales/{sale['id']}/refund",
+        json=refund_payload,
+        headers={**headers, "X-Store-ID": store_id},
+    )
+    assert replay_response.status_code == 200, replay_response.text
+    assert replay_response.json()["refund_amount"] == "2000.00"
+
+    mismatched_replay = client.post(
+        f"/api/v1/sales/{sale['id']}/refund",
+        json={**refund_payload, "reason": "Different request"},
+        headers={**headers, "X-Store-ID": store_id},
+    )
+    assert mismatched_replay.status_code == 409, mismatched_replay.text
+
+    excess_quantity = client.post(
+        f"/api/v1/sales/{sale['id']}/refund",
+        json={
+            "reason": "Return remaining stock",
+            "amount": "4000.00",
+            "items": [{"variant_id": variant_id, "quantity": "2"}],
+        },
+        headers={**headers, "X-Store-ID": store_id},
+    )
+    assert excess_quantity.status_code == 400, excess_quantity.text
+
+    excess_amount = client.post(
+        f"/api/v1/sales/{sale['id']}/refund",
+        json={"reason": "Refund beyond remaining paid balance", "amount": "2001.00"},
+        headers={**headers, "X-Store-ID": store_id},
+    )
+    assert excess_amount.status_code == 400, excess_amount.text
+
+    final_stock = client.get(
+        "/api/v1/inventory/stock",
+        params={"store_id": store_id},
+        headers={**headers, "X-Store-ID": store_id},
+    )
+    assert final_stock.status_code == 200, final_stock.text
+    final_balance = next(item for item in final_stock.json() if item["variant_id"] == variant_id)
+    assert final_balance["quantity"] == "4.000" or final_balance["quantity"] == "4.0" or final_balance["quantity"] == "4"
 
     final_sale = client.get(f"/api/v1/sales/{sale['id']}", headers={**headers, "X-Store-ID": store_id})
     assert final_sale.status_code == 200, final_sale.text

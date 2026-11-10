@@ -31,6 +31,17 @@ def init_db() -> None:
     from app.modules.sync import models as sync_models  # noqa: F401
     from app.modules.subscriptions import models as subscriptions_models  # noqa: F401
 
+    if "sale_refunds" in inspect(engine).get_table_names():
+        refund_columns = {column["name"] for column in inspect(engine).get_columns("sale_refunds")}
+        refund_migrations = {
+            "idempotency_key": "ALTER TABLE sale_refunds ADD COLUMN idempotency_key VARCHAR(128)",
+            "request_hash": "ALTER TABLE sale_refunds ADD COLUMN request_hash VARCHAR(64)",
+            "items_json": "ALTER TABLE sale_refunds ADD COLUMN items_json TEXT",
+        }
+        with engine.begin() as connection:
+            for column, migration in refund_migrations.items():
+                if column not in refund_columns:
+                    connection.execute(text(migration))
     Base.metadata.create_all(bind=engine)
     sale_item_columns = {column["name"] for column in inspect(engine).get_columns("sale_items")}
     if "unit_cost" not in sale_item_columns:

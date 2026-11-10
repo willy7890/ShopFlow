@@ -39,6 +39,9 @@ export interface SaleHistoryEntry {
 export interface SaleDetail extends SaleHistoryEntry {
   cashTenderedMinor: number
   changeMinor: number
+  refundMinor: number
+  refundStatus: string | null
+  refundReason: string | null
   items: Array<{
     id: string
     productName: string
@@ -327,7 +330,7 @@ export async function getSaleDetail(
   saleId: string,
 ): Promise<SaleDetail | null> {
   await assertSalesVisibility(database, workspace)
-  const sale = await database.getFirstAsync<Omit<SaleDetail, 'items'>>(
+  const sale = await database.getFirstAsync<Omit<SaleDetail, 'items' | 'refundMinor' | 'refundStatus'>>(
     `SELECT sales.id, sales.sale_number AS saleNumber, sales.total_minor AS totalMinor,
        sales.paid_minor AS paidMinor, sales.balance_due_minor AS balanceDueMinor,
        sales.customer_name_snapshot AS customerName, sales.created_at AS createdAt,
@@ -348,7 +351,180 @@ export async function getSaleDetail(
      FROM sale_items WHERE sale_id = ? ORDER BY rowid`,
     saleId,
   )
-  return { ...sale, items }
+  const refund = await database.getFirstAsync<{ amountMinor: number; status: string; reason: string }>(
+    `SELECT amount_minor AS amountMinor, status, reason
+     FROM sale_refunds
+     WHERE sale_id = ? AND business_id = ? AND store_id = ?`,
+    saleId,
+    workspace.businessId,
+    workspace.storeId,
+  )
+  return {
+    ...sale,
+    refundMinor: Number(refund?.amountMinor ?? 0),
+    refundStatus: refund?.status ?? null,
+    refundReason: refund?.reason ?? null,
+    items,
+  }
+}
+
+export interface SaleRefundRequest {
+  saleId: string
+  serverSaleId: string
+  amountMinor: number
+  reason: string
+  idempotencyKey: string
+  status: string
+}
+
+export async function getSaleRefundRequest(
+  database: SQLiteDatabase,
+  workspace: Workspace,
+  saleId: string,
+): Promise<SaleRefundRequest | null> {
+  await assertSalesVisibility(database, workspace)
+  return database.getFirstAsync<SaleRefundRequest>(
+    `SELECT sale_id AS saleId, server_sale_id AS serverSaleId,
+       amount_minor AS amountMinor, reason, idempotency_key AS idempotencyKey, status
+     FROM sale_refunds
+     WHERE sale_id = ? AND business_id = ? AND store_id = ?`,
+    saleId,
+    workspace.businessId,
+    workspace.storeId,
+  )
+}
+
+export async function prepareSaleRefund(
+  database: SQLiteDatabase,
+  workspace: Workspace,
+  input: Pick<SaleRefundRequest, 'saleId' | 'serverSaleId' | 'reason' | 'idempotencyKey'>,
+  createId: () => string,
+): Promise<SaleRefundRequest> {
+  await assertPermission(database, workspace, 'sell')
+  const reason = input.reason.trim()
+  if (reason.length < 2 || reason.length > 220) throw new Error('Refund reason must be 2 to 220 characters.')
+  const now = new Date().toISOString()
+  let request: SaleRefundRequest | null = null
+
+  await database.withExclusiveTransactionAsync(async (transaction) => {
+    const sale = await transaction.getFirstAsync<{ id: string }>(
+      'SELECT id FROM sales WHERE id = ? AND business_id = ? AND store_id = ?',
+      input.saleId,
+      workspace.businessId,
+      workspace.storeId,
+    )
+    if (!sale) throw new Error('The sale is no longer available in the selected store.')
+
+    const existing = await transaction.getFirstAsync<SaleRefundRequest>(
+      `SELECT sale_id AS saleId, server_sale_id AS serverSaleId,
+         amount_minor AS amountMinor, reason, idempotency_key AS idempotencyKey, status
+       FROM sale_refunds
+       WHERE sale_id = ? AND business_id = ? AND store_id = ?`,
+      input.saleId,
+      workspace.businessId,
+      workspace.storeId,
+    )
+    if (existing) {
+      if (
+        existing.idempotencyKey !== input.idempotencyKey
+        || existing.serverSaleId !== input.serverSaleId
+        || existing.reason !== reason
+      ) {
+        throw new Error('This sale already has a different refund request.')
+      }
+      request = existing
+      return
+    }
+
+    await transaction.runAsync(
+      `INSERT INTO sale_refunds
+         (id, business_id, store_id, sale_id, server_sale_id, amount_minor,
+          reason, idempotency_key, status, created_at)
+       VALUES (?, ?, ?, ?, ?, 0, ?, ?, 'pending', ?)`,
+      createId(),
+      workspace.businessId,
+      workspace.storeId,
+      input.saleId,
+      input.serverSaleId,
+      reason,
+      input.idempotencyKey,
+      now,
+    )
+    request = {
+      saleId: input.saleId,
+      serverSaleId: input.serverSaleId,
+      amountMinor: 0,
+      reason,
+      idempotencyKey: input.idempotencyKey,
+      status: 'pending',
+    }
+  })
+  if (!request) throw new Error('The refund request could not be saved.')
+  return request
+}
+
+export async function completeSaleRefund(
+  database: SQLiteDatabase,
+  workspace: Workspace,
+  input: SaleRefundRequest,
+  createId: () => string,
+): Promise<void> {
+  await assertPermission(database, workspace, 'sell')
+  if (!Number.isSafeInteger(input.amountMinor) || input.amountMinor <= 0) {
+    throw new Error('The server returned an invalid refund amount.')
+  }
+  const now = new Date().toISOString()
+  await database.withExclusiveTransactionAsync(async (transaction) => {
+    const existing = await transaction.getFirstAsync<{
+      amountMinor: number
+      idempotencyKey: string
+      reason: string
+      serverSaleId: string
+      status: string
+    }>(
+      `SELECT amount_minor AS amountMinor, idempotency_key AS idempotencyKey,
+         reason, server_sale_id AS serverSaleId, status
+       FROM sale_refunds
+       WHERE sale_id = ? AND business_id = ? AND store_id = ?`,
+      input.saleId,
+      workspace.businessId,
+      workspace.storeId,
+    )
+    if (
+      !existing
+      || existing.idempotencyKey !== input.idempotencyKey
+      || existing.serverSaleId !== input.serverSaleId
+      || existing.reason !== input.reason
+    ) {
+      throw new Error('The saved refund request no longer matches the server response.')
+    }
+    if (existing.amountMinor > 0) return
+
+    await transaction.runAsync(
+      `UPDATE sale_refunds SET amount_minor = ?, status = ?, created_at = ?
+       WHERE sale_id = ? AND business_id = ? AND store_id = ? AND amount_minor = 0`,
+      input.amountMinor,
+      input.status,
+      now,
+      input.saleId,
+      workspace.businessId,
+      workspace.storeId,
+    )
+    await transaction.runAsync(
+      `INSERT INTO cashbook_entries
+         (id, business_id, store_id, entry_type, source, category, amount_minor,
+          note, reference_id, actor_id, created_at)
+       VALUES (?, ?, ?, 'expense', 'manual', 'Sale refund', ?, ?, ?, ?, ?)`,
+      createId(),
+      workspace.businessId,
+      workspace.storeId,
+      input.amountMinor,
+      input.reason,
+      `sale-refund:${input.saleId}`,
+      workspace.userId,
+      now,
+    )
+  })
 }
 
 async function assertSalesVisibility(database: SQLiteDatabase, workspace: Workspace): Promise<void> {

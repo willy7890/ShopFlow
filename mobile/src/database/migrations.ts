@@ -422,6 +422,23 @@ CREATE UNIQUE INDEX idx_cashbook_one_opening_balance
   WHERE source = 'manual' AND reference_id = 'opening-balance';
 `
 
+const PHASE_ELEVEN_SCHEMA = `
+CREATE TABLE sale_refunds (
+  id TEXT PRIMARY KEY NOT NULL,
+  business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  store_id TEXT NOT NULL REFERENCES stores(id) ON DELETE RESTRICT,
+  sale_id TEXT NOT NULL UNIQUE REFERENCES sales(id) ON DELETE CASCADE,
+  server_sale_id TEXT NOT NULL,
+  amount_minor INTEGER NOT NULL CHECK (amount_minor >= 0),
+  reason TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX idx_sale_refunds_store_created
+  ON sale_refunds(business_id, store_id, created_at DESC);
+`
+
 export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {
   await database.execAsync('PRAGMA foreign_keys = ON;')
 
@@ -429,7 +446,7 @@ export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {
     'PRAGMA user_version',
   ) ?? { user_version: 0 }
 
-  if (currentVersion > 10) {
+  if (currentVersion > 11) {
     throw new Error(`Database version ${currentVersion} is newer than this application supports.`)
   }
 
@@ -500,6 +517,13 @@ export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {
     await database.withExclusiveTransactionAsync(async (transaction) => {
       await transaction.execAsync(PHASE_TEN_SCHEMA)
       await transaction.execAsync('PRAGMA user_version = 10;')
+    })
+  }
+
+  if (currentVersion < 11) {
+    await database.withExclusiveTransactionAsync(async (transaction) => {
+      await transaction.execAsync(PHASE_ELEVEN_SCHEMA)
+      await transaction.execAsync('PRAGMA user_version = 11;')
     })
   }
 }

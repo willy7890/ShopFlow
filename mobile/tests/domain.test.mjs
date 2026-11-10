@@ -3,6 +3,7 @@ import test from 'node:test'
 import { formatTzs, multiplyMoney, parseTzsAmount } from '../src/domain/money.ts'
 import { cashSaleInput, productInput, workspaceInput } from '../src/domain/validation.ts'
 import { normalizeApiBaseUrl } from '../src/domain/apiUrl.ts'
+import { buildInvoiceHtml } from '../src/domain/invoiceHtml.ts'
 
 test('parses only safe whole-TZS amounts', () => {
   assert.equal(parseTzsAmount('1,250'), 1250)
@@ -22,6 +23,42 @@ test('formats TZS without fractional values', () => {
   assert.match(formatTzs(1250), /1,250/)
   assert.match(formatTzs(1250, 'sw'), /1,250/)
   assert.throws(() => formatTzs(-1), /non-negative/)
+})
+
+test('printable invoice escapes user-entered text and includes monetary summary', () => {
+  const html = buildInvoiceHtml({
+    businessName: '<Shop & Co>',
+    storeName: 'Main Store',
+    invoiceLabel: 'Invoice',
+    saleNumberLabel: 'Sale',
+    dateLabel: 'Date',
+    customerLabel: 'Customer',
+    walkInLabel: 'Walk-in',
+    itemLabel: 'Item',
+    quantityLabel: 'Qty',
+    unitPriceLabel: 'Unit price',
+    totalLabel: 'Total',
+    paidLabel: 'Paid',
+    balanceDueLabel: 'Balance due',
+    cashTenderedLabel: 'Cash received',
+    changeLabel: 'Change',
+    refundLabel: 'Refund',
+    saleNumber: 'S-100',
+    date: 'Nov 10, 2026',
+    customerName: '<script>alert(1)</script>',
+    total: 'TZS 1,000',
+    paid: 'TZS 1,000',
+    balanceDue: 'TZS 0',
+    cashTendered: 'TZS 1,000',
+    change: 'TZS 0',
+    refund: null,
+    items: [{ quantity: '2', name: 'Tea <strong>', unitPrice: 'TZS 500', lineTotal: 'TZS 1,000' }],
+  })
+  assert.ok(html.includes('&lt;Shop &amp; Co&gt;'))
+  assert.ok(html.includes('&lt;script&gt;alert(1)&lt;/script&gt;'))
+  assert.ok(html.includes('Tea &lt;strong&gt;'))
+  assert.ok(!html.includes('<script>'))
+  assert.ok(html.includes('TZS 1,000'))
 })
 
 test('normalizes API URLs and rejects insecure non-local servers', () => {

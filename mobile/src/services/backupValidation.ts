@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite'
 
-const CURRENT_SCHEMA_VERSION = 10
+const CURRENT_SCHEMA_VERSION = 11
 const REQUIRED_TABLES = ['businesses', 'stores', 'users', 'app_settings']
 
 export async function validateShopFlowBackup(database: SQLiteDatabase): Promise<void> {

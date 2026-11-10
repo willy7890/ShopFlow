@@ -16,7 +16,7 @@ This version includes the Phase 1–2 foundation, Phase 3–4 catalog and invent
 - Store/business validation on inventory routes
 - POS sales creation with multi-item carts and payment totals
 - Sale history retrieval, receipt data and payment balance tracking
-- Refund processing that restores stock and records refund history
+- Refund processing with per-sale idempotency, cumulative quantity checks, stock restoration and refund history
 
 ## Local setup
 ```bash
