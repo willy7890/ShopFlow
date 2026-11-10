@@ -16,6 +16,7 @@ import {
   updateProduct,
 } from '../src/repositories/catalog.ts'
 import { adjustStock, listRecentMovements } from '../src/repositories/inventory.ts'
+import { listProductAuditEvents } from '../src/repositories/productAudit.ts'
 import { createCashSale, getSalesSummary } from '../src/repositories/sales.ts'
 import {
   createCustomer,
@@ -88,7 +89,7 @@ test('SQLite migrations, offline sale persistence and stock rollback are consist
   try {
     await migrateDatabase(database)
     await migrateDatabase(database)
-    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 8)
+    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 9)
 
     const workspace = await createWorkspace(database, {
       ownerName: 'Asha Mushi',
@@ -228,7 +229,10 @@ test('SQLite migrations, offline sale persistence and stock rollback are consist
       sellPriceMinor: 600,
       initialQuantity: 0,
       lowStockThreshold: 2,
-    })
+    }, randomUUID)
+    assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM product_audit_events')).count, 3)
+    const auditHistory = await listProductAuditEvents(database, workspace, 'Tea')
+    assert.deepEqual(auditHistory.map(({ eventType }) => eventType), ['updated', 'stock_adjusted', 'created'])
     const [updatedProduct] = await listProducts(database, workspace, 'TEA-NEW')
     assert.equal(updatedProduct.name, 'Black Tea')
     assert.equal(updatedProduct.sellPriceMinor, 600)
@@ -608,7 +612,7 @@ test('version 1 local business data upgrades in place and persists the default l
 
     await migrateDatabase(database)
     await migrateDatabase(database)
-    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 8)
+    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 9)
     assert.equal((await database.getFirstAsync('SELECT name FROM businesses WHERE id = ?', 'business-v1')).name, 'Existing Shop')
     assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM user_store_permissions')).count, 8)
     assert.equal((await getActiveWorkspace(database)).userId, 'owner-v1')

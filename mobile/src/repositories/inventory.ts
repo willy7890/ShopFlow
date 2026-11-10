@@ -2,6 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite'
 import { stockAdjustmentInput, type StockAdjustmentInput } from '../domain/validation.ts'
 import type { Workspace } from './workspace.ts'
 import { assertActiveWorkspace, assertPermission } from './workspace.ts'
+import { writeProductAuditEvent } from './productAudit.ts'
 
 export interface StockMovement {
   id: string
@@ -22,9 +23,22 @@ export async function adjustStock(
   await assertPermission(database, workspace, 'manage_inventory')
   const parsed = stockAdjustmentInput.safeParse(input)
   if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? 'Stock adjustment is invalid.')
-  const variant = await database.getFirstAsync<{ costPriceMinor: number; trackStock: number }>(
-    `SELECT cost_price_minor AS costPriceMinor, track_stock AS trackStock
-     FROM product_variants WHERE id = ? AND business_id = ? AND is_active = 1`,
+  const variant = await database.getFirstAsync<{
+    costPriceMinor: number
+    trackStock: number
+    productId: string
+    productName: string
+    categoryId: string | null
+    categoryName: string | null
+  }>(
+    `SELECT product_variants.cost_price_minor AS costPriceMinor,
+       product_variants.track_stock AS trackStock, products.id AS productId,
+       products.name AS productName, products.category_id AS categoryId,
+       categories.name AS categoryName
+     FROM product_variants
+     JOIN products ON products.id = product_variants.product_id
+     LEFT JOIN categories ON categories.id = products.category_id
+     WHERE product_variants.id = ? AND product_variants.business_id = ? AND product_variants.is_active = 1`,
     parsed.data.variantId,
     workspace.businessId,
   )
@@ -70,6 +84,18 @@ export async function adjustStock(
       now,
       parsed.data.reason,
     )
+    await writeProductAuditEvent(transaction, {
+      id: createId(),
+      workspace,
+      productId: variant.productId,
+      variantId: parsed.data.variantId,
+      categoryId: variant.categoryId,
+      categoryName: variant.categoryName ?? '',
+      eventType: 'stock_adjusted',
+      before: { reason: parsed.data.reason },
+      after: { quantityDelta: parsed.data.quantityDelta, reason: parsed.data.reason },
+      createdAt: now,
+    })
   })
 }
 

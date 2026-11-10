@@ -5,6 +5,7 @@ import {
 } from '../domain/validation.ts'
 import type { Workspace } from './workspace.ts'
 import { assertActiveWorkspace, assertPermission } from './workspace.ts'
+import { writeProductAuditEvent } from './productAudit.ts'
 
 export interface LocalProduct {
   productId: string
@@ -212,6 +213,13 @@ export async function createProduct(
   const parsed = productInput.safeParse(input)
   if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? 'Product details are invalid.')
   await validateCategory(database, workspace.businessId, parsed.data.categoryId)
+  const category = parsed.data.categoryId
+    ? await database.getFirstAsync<{ name: string }>(
+      'SELECT name FROM categories WHERE id = ? AND business_id = ?',
+      parsed.data.categoryId,
+      workspace.businessId,
+    )
+    : null
   await validateUniqueCodes(database, workspace.businessId, parsed.data.sku, parsed.data.barcode)
 
   const productId = createId()
@@ -284,6 +292,17 @@ export async function createProduct(
         )
       }
     }
+    await writeProductAuditEvent(transaction, {
+      id: createId(),
+      workspace,
+      productId,
+      variantId,
+      categoryId: parsed.data.categoryId,
+      categoryName: category?.name ?? '',
+      eventType: 'created',
+      after: parsed.data,
+      createdAt: now,
+    })
   })
 }
 
@@ -293,6 +312,7 @@ export async function updateProduct(
   productId: string,
   variantId: string,
   input: ProductInput,
+  createId: () => string,
 ): Promise<void> {
   await assertPermission(database, workspace, 'manage_products')
   const parsed = productInput.safeParse(input)
@@ -300,15 +320,52 @@ export async function updateProduct(
   await validateCategory(database, workspace.businessId, parsed.data.categoryId)
   await validateUniqueCodes(database, workspace.businessId, parsed.data.sku, parsed.data.barcode, productId)
 
-  const existing = await database.getFirstAsync<{ id: string }>(
-    `SELECT product_variants.id FROM product_variants
+  const existing = await database.getFirstAsync<{
+    id: string
+    name: string
+    categoryId: string | null
+    categoryName: string | null
+    sku: string
+    unitCode: string
+    costPriceMinor: number
+    sellPriceMinor: number
+    lowStockThreshold: number
+    barcode: string | null
+  }>(
+    `SELECT product_variants.id, products.name, products.category_id AS categoryId,
+       categories.name AS categoryName, product_variants.sku,
+       product_variants.unit_code AS unitCode,
+       product_variants.cost_price_minor AS costPriceMinor,
+       product_variants.sell_price_minor AS sellPriceMinor,
+       product_variants.low_stock_threshold AS lowStockThreshold,
+       product_variants.barcode
+     FROM product_variants
      JOIN products ON products.id = product_variants.product_id
+     LEFT JOIN categories ON categories.id = products.category_id
      WHERE products.id = ? AND product_variants.id = ? AND products.business_id = ?`,
     productId,
     variantId,
     workspace.businessId,
   )
   if (!existing) throw new Error('Product does not belong to this business.')
+  const category = parsed.data.categoryId
+    ? await database.getFirstAsync<{ name: string }>(
+      'SELECT name FROM categories WHERE id = ? AND business_id = ?',
+      parsed.data.categoryId,
+      workspace.businessId,
+    )
+    : null
+  const before = {
+    name: existing.name,
+    categoryId: existing.categoryId,
+    categoryName: existing.categoryName,
+    sku: existing.sku,
+    unitCode: existing.unitCode,
+    costPriceMinor: existing.costPriceMinor,
+    sellPriceMinor: existing.sellPriceMinor,
+    lowStockThreshold: existing.lowStockThreshold,
+    barcode: existing.barcode,
+  }
 
   await database.withExclusiveTransactionAsync(async (transaction) => {
     await transaction.runAsync(
@@ -333,5 +390,17 @@ export async function updateProduct(
       variantId,
       workspace.businessId,
     )
+    await writeProductAuditEvent(transaction, {
+      id: createId(),
+      workspace,
+      productId,
+      variantId,
+      categoryId: parsed.data.categoryId,
+      categoryName: category?.name ?? existing.categoryName ?? '',
+      eventType: 'updated',
+      before,
+      after: parsed.data,
+      createdAt: new Date().toISOString(),
+    })
   })
 }

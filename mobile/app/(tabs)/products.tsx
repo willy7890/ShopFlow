@@ -15,6 +15,7 @@ import {
   type Category,
   type LocalProduct,
 } from '@/src/repositories/catalog'
+import { listProductAuditEvents, type ProductAuditEvent } from '@/src/repositories/productAudit'
 import { getActiveWorkspace, type Workspace } from '@/src/repositories/workspace'
 import { useTheme, type ThemeColors } from '@/src/theme/colors'
 import { useI18n } from '@/src/i18n/I18nProvider'
@@ -35,6 +36,8 @@ export default function ProductsScreen() {
   const [workspace, setWorkspace] = useState<Workspace | null>(null)
   const [products, setProducts] = useState<LocalProduct[]>([])
   const [categories, setCategories] = useState<Category[]>([])
+  const [auditEvents, setAuditEvents] = useState<ProductAuditEvent[]>([])
+  const [auditCategory, setAuditCategory] = useState('')
   const [search, setSearch] = useState('')
   const [selectedProduct, setSelectedProduct] = useState<LocalProduct | null>(null)
   const [name, setName] = useState('')
@@ -66,16 +69,20 @@ export default function ProductsScreen() {
         setCategories([])
         return
       }
-      const [currentProducts, currentCategories] = await Promise.all([
+      const [currentProducts, currentCategories, currentEvents] = await Promise.all([
         listProducts(database, current, search),
         listCategories(database, current),
+        canReadAudit(database, current)
+          ? listProductAuditEvents(database, current, auditCategory || undefined)
+          : Promise.resolve([]),
       ])
       setProducts(currentProducts)
       setCategories(currentCategories)
+      setAuditEvents(currentEvents)
     } finally {
       setLoading(false)
     }
-  }, [database, search])
+  }, [auditCategory, database, search])
 
   useFocusEffect(useCallback(() => {
     void load().catch((reason: unknown) => {
@@ -139,7 +146,7 @@ export default function ProductsScreen() {
         lowStockThreshold,
       }
       if (selectedProduct) {
-        await updateProduct(database, workspace, selectedProduct.productId, selectedProduct.variantId, input)
+        await updateProduct(database, workspace, selectedProduct.productId, selectedProduct.variantId, input, () => Crypto.randomUUID())
       } else {
         await createProduct(database, workspace, input, () => Crypto.randomUUID())
       }
@@ -261,8 +268,50 @@ export default function ProductsScreen() {
           </Card>
         </Pressable>
       ))}
+      <Card>
+        <Text style={styles.sectionTitle}>{t('products.history')}</Text>
+        <View style={styles.categoryRow}>
+          <Chip label={t('products.allCategories')} selected={!auditCategory} onPress={() => setAuditCategory('')} />
+          {categories.map((category) => (
+            <Chip
+              key={category.id}
+              label={category.name}
+              selected={auditCategory === category.name}
+              onPress={() => setAuditCategory(auditCategory === category.name ? '' : category.name)}
+            />
+          ))}
+        </View>
+        {auditEvents.length === 0 ? <Text style={styles.muted}>{t('products.noHistory')}</Text> : auditEvents.map((event) => (
+          <View key={event.id} style={styles.historyRow}>
+            <View style={styles.flex}>
+              <Text style={styles.productName}>{event.productName} · {t(`products.history.${event.eventType}`)}</Text>
+              <Text style={styles.muted}>
+                {event.categoryName || t('common.uncategorized')} · {event.sku ?? ''}
+                {event.actorName ? ` · ${event.actorName}` : ''}
+              </Text>
+              {event.beforeJson ? <Text style={styles.muted}>{event.beforeJson}</Text> : null}
+              <Text style={styles.muted}>{event.afterJson}</Text>
+              <Text style={styles.muted}>{new Date(event.createdAt).toLocaleString(language === 'sw' ? 'sw-TZ' : 'en-TZ')}</Text>
+            </View>
+          </View>
+        ))}
+      </Card>
     </Screen>
   )
+}
+
+async function canReadAudit(database: ReturnType<typeof useSQLiteContext>, workspace: Workspace): Promise<boolean> {
+  if (workspace.role === 'owner') return true
+  const permission = await database.getFirstAsync<{ allowed: number }>(
+    `SELECT 1 AS allowed FROM user_store_permissions
+     WHERE business_id = ? AND store_id = ? AND user_id = ?
+       AND permission IN ('view_reports', 'manage_products', 'manage_inventory')
+     LIMIT 1`,
+    workspace.businessId,
+    workspace.storeId,
+    workspace.userId,
+  )
+  return Boolean(permission)
 }
 
 function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
@@ -297,5 +346,6 @@ function createStyles(colors: ThemeColors) {
     productName: { color: colors.text, flex: 1, fontSize: 15, fontWeight: '700' },
     stock: { color: colors.text, fontSize: 14, fontWeight: '700' },
     muted: { color: colors.muted, fontSize: 13 },
+    historyRow: { borderTopColor: colors.border, borderTopWidth: 1, paddingVertical: 10 },
   })
 }

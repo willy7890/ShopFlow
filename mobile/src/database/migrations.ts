@@ -394,6 +394,28 @@ ALTER TABLE product_variants ADD COLUMN remote_track_stock INTEGER NOT NULL DEFA
   CHECK (remote_track_stock IN (0, 1));
 `
 
+const PHASE_NINE_SCHEMA = `
+ALTER TABLE customers ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1));
+ALTER TABLE suppliers ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1));
+
+CREATE TABLE product_audit_events (
+  id TEXT PRIMARY KEY NOT NULL,
+  business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  store_id TEXT NOT NULL REFERENCES stores(id) ON DELETE RESTRICT,
+  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+  variant_id TEXT REFERENCES product_variants(id) ON DELETE SET NULL,
+  category_id TEXT REFERENCES categories(id) ON DELETE SET NULL,
+  category_name TEXT NOT NULL DEFAULT '',
+  event_type TEXT NOT NULL CHECK (event_type IN ('created', 'updated', 'stock_adjusted')),
+  before_json TEXT,
+  after_json TEXT NOT NULL,
+  actor_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX idx_product_audit_scope_created
+  ON product_audit_events(business_id, store_id, category_id, created_at DESC);
+`
+
 export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {
   await database.execAsync('PRAGMA foreign_keys = ON;')
 
@@ -401,7 +423,7 @@ export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {
     'PRAGMA user_version',
   ) ?? { user_version: 0 }
 
-  if (currentVersion > 8) {
+  if (currentVersion > 9) {
     throw new Error(`Database version ${currentVersion} is newer than this application supports.`)
   }
 
@@ -458,6 +480,13 @@ export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {
     await database.withExclusiveTransactionAsync(async (transaction) => {
       await transaction.execAsync(PHASE_EIGHT_SCHEMA)
       await transaction.execAsync('PRAGMA user_version = 8;')
+    })
+  }
+
+  if (currentVersion < 9) {
+    await database.withExclusiveTransactionAsync(async (transaction) => {
+      await transaction.execAsync(PHASE_NINE_SCHEMA)
+      await transaction.execAsync('PRAGMA user_version = 9;')
     })
   }
 }
