@@ -53,6 +53,7 @@ class SaleItem(Base):
     quantity: Mapped[Decimal] = mapped_column(Numeric(18, 3), nullable=False)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     line_total: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    unit_cost: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
 
     sale = relationship("Sale", back_populates="items")
 

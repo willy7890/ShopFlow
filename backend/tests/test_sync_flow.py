@@ -286,3 +286,78 @@ def test_failed_sync_operation_can_be_retried_with_the_same_client_id():
     retried = client.post("/api/v1/sync/push", json=payload, headers=sync_headers)
     assert retried.status_code == 200, retried.text
     assert retried.json()[0]["state"] == "synced"
+
+
+def test_offline_account_updates_and_archives_sync_idempotently():
+    access_token, business_id = _register_owner()
+    headers = {"Authorization": f"Bearer {access_token}", "X-Business-ID": business_id}
+    store = client.get(f"/api/v1/businesses/{business_id}/stores", headers=headers)
+    assert store.status_code == 200, store.text
+    store_id = store.json()[0]["id"]
+    customer = client.post("/api/v1/customers", json={"name": "Before Customer"}, headers=headers)
+    assert customer.status_code == 201, customer.text
+    supplier = client.post(
+        "/api/v1/inventory/suppliers",
+        json={"name": "Before Supplier"},
+        headers={**headers, "X-Store-ID": store_id},
+    )
+    assert supplier.status_code == 201, supplier.text
+    device = client.post(
+        "/api/v1/sync/devices",
+        json={"device_name": "account-update-phone", "device_type": "mobile"},
+        headers=headers,
+    )
+    sync_headers = {**headers, "X-Device-ID": device.json()["id"]}
+
+    update_payload = {
+        "items": [
+            {
+                "clientId": "customer-update-1",
+                "entity_type": "customer_update",
+                "id": customer.json()["id"],
+                "storeId": store_id,
+                "name": "Updated Customer",
+                "isActive": False,
+            },
+            {
+                "clientId": "supplier-update-1",
+                "entity_type": "supplier_update",
+                "id": supplier.json()["id"],
+                "storeId": store_id,
+                "name": "Updated Supplier",
+                "isActive": False,
+            },
+        ]
+    }
+    pushed = client.post("/api/v1/sync/push", json=update_payload, headers=sync_headers)
+    assert pushed.status_code == 200, pushed.text
+    assert [item["state"] for item in pushed.json()] == ["synced", "synced"]
+    duplicated = client.post("/api/v1/sync/push", json=update_payload, headers=sync_headers)
+    assert duplicated.status_code == 200, duplicated.text
+    assert [item["state"] for item in duplicated.json()] == ["synced", "synced"]
+    assert client.get("/api/v1/customers", headers=headers).json() == []
+    assert client.get("/api/v1/inventory/suppliers", headers=headers).json() == []
+
+    restore_payload = {
+        "items": [
+            {
+                "clientId": "customer-update-2",
+                "entity_type": "customer_update",
+                "id": customer.json()["id"],
+                "storeId": store_id,
+                "isActive": True,
+            },
+            {
+                "clientId": "supplier-update-2",
+                "entity_type": "supplier_update",
+                "id": supplier.json()["id"],
+                "storeId": store_id,
+                "isActive": True,
+            },
+        ]
+    }
+    restored = client.post("/api/v1/sync/push", json=restore_payload, headers=sync_headers)
+    assert restored.status_code == 200, restored.text
+    assert [item["state"] for item in restored.json()] == ["synced", "synced"]
+    assert client.get(f"/api/v1/customers/{customer.json()['id']}", headers=headers).json()["name"] == "Updated Customer"
+    assert client.get("/api/v1/inventory/suppliers", headers=headers).json()[0]["name"] == "Updated Supplier"

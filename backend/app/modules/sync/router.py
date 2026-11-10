@@ -65,7 +65,10 @@ def _normalize_sync_item(item: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail="Each sync item must be a JSON object.")
     entity_type = item.get("entity_type", "sale")
     if entity_type != "sale":
-        if entity_type not in {"customer", "supplier", "customer_ledger", "supplier_ledger", "cashbook_entry"}:
+        if entity_type not in {
+            "customer", "customer_update", "supplier", "supplier_update",
+            "customer_ledger", "supplier_ledger", "cashbook_entry",
+        }:
             raise HTTPException(status_code=422, detail=f"Unsupported sync entity type: {entity_type}.")
         normalized = dict(item)
         normalized["entity_type"] = entity_type
@@ -169,6 +172,31 @@ def _apply_sync_record(
     created_at = _sync_datetime(item.get("createdAt") or item.get("created_at"))
     entity_id = str(item.get("entryId") or item.get("id") or "")
 
+    if entity_type == "customer_update":
+        if membership.role not in {"owner", "business_manager", "sales_manager", "cashier", "accountant"}:
+            raise HTTPException(status_code=403, detail="You do not have permission to update customers.")
+        customer = db.query(Customer).filter(
+            Customer.id == entity_id,
+            Customer.business_id == membership.business_id,
+        ).first()
+        is_active = item.get("isActive")
+        name = item.get("name")
+        phone = item.get("phone")
+        if not customer or not isinstance(is_active, bool):
+            raise HTTPException(status_code=422, detail="Customer update details are invalid.")
+        if name is not None:
+            name = str(name).strip()
+            if not 1 <= len(name) <= 180:
+                raise HTTPException(status_code=422, detail="Customer name is invalid.")
+            customer.name = name
+        if phone is not None:
+            phone = str(phone).strip() or None
+            if phone and len(phone) > 32:
+                raise HTTPException(status_code=422, detail="Customer phone is invalid.")
+            customer.phone = phone
+        customer.is_active = is_active
+        return "Customer updated."
+
     if entity_type == "customer":
         if membership.role not in {"owner", "business_manager", "sales_manager", "cashier", "accountant"}:
             raise HTTPException(status_code=403, detail="You do not have permission to sync customers.")
@@ -189,6 +217,31 @@ def _apply_sync_record(
         db.add(customer)
         db.flush()
         return "Customer synced."
+
+    if entity_type == "supplier_update":
+        if membership.role not in {"owner", "business_manager", "inventory_manager"}:
+            raise HTTPException(status_code=403, detail="You do not have permission to update suppliers.")
+        supplier = db.query(Supplier).filter(
+            Supplier.id == entity_id,
+            Supplier.business_id == membership.business_id,
+        ).first()
+        is_active = item.get("isActive")
+        name = item.get("name")
+        phone = item.get("phone")
+        if not supplier or not isinstance(is_active, bool):
+            raise HTTPException(status_code=422, detail="Supplier update details are invalid.")
+        if name is not None:
+            name = str(name).strip()
+            if not 1 <= len(name) <= 180:
+                raise HTTPException(status_code=422, detail="Supplier name is invalid.")
+            supplier.name = name
+        if phone is not None:
+            phone = str(phone).strip() or None
+            if phone and len(phone) > 32:
+                raise HTTPException(status_code=422, detail="Supplier phone is invalid.")
+            supplier.phone = phone
+        supplier.is_active = is_active
+        return "Supplier updated."
 
     if entity_type == "supplier":
         if membership.role not in {"owner", "business_manager", "inventory_manager"}:

@@ -103,6 +103,18 @@ def test_reports_dashboard_sales_profit_inventory_and_exports():
     receive_response = client.post(f"/api/v1/inventory/purchases/{purchase_id}/receive", headers={**headers, "X-Store-ID": store_id})
     assert receive_response.status_code == 200, receive_response.text
 
+    draft_purchase = client.post(
+        "/api/v1/inventory/purchases",
+        json={
+            "store_id": store_id,
+            "supplier_id": supplier_id,
+            "reference_number": "PO-REPORT-DRAFT",
+            "items": [{"variant_id": variant_id, "quantity": "1", "unit_cost": "900", "conversion_factor": "1"}],
+        },
+        headers={**headers, "X-Store-ID": store_id},
+    )
+    assert draft_purchase.status_code == 201, draft_purchase.text
+
     sale_response = client.post(
         "/api/v1/sales",
         json={
@@ -116,6 +128,22 @@ def test_reports_dashboard_sales_profit_inventory_and_exports():
     assert sale_response.status_code == 201, sale_response.text
     sale = sale_response.json()
     assert sale["total_amount"] == "1200.00"
+
+    variant_update = client.put(
+        f"/api/v1/catalog/products/{product_id}/variants/{variant_id}",
+        json={
+            "name": "A5 Notebook",
+            "unit_id": unit_id,
+            "sku": variant_response.json()["sku"],
+            "barcode": variant_response.json()["barcode"],
+            "purchase_price": "900",
+            "selling_price": "600",
+            "low_stock_threshold": "1",
+            "track_stock": True,
+        },
+        headers=headers,
+    )
+    assert variant_update.status_code == 200, variant_update.text
 
     expense_response = client.post(
         "/api/v1/finance/entries",
@@ -150,6 +178,24 @@ def test_reports_dashboard_sales_profit_inventory_and_exports():
     assert profit_report.json()["cost_of_goods_sold"] == "500.00"
     assert profit_report.json()["gross_profit"] == "700.00"
 
+    refund_response = client.post(
+        f"/api/v1/sales/{sale['id']}/refund",
+        json={
+            "reason": "One notebook returned",
+            "items": [{"variant_id": variant_id, "quantity": "1"}],
+        },
+        headers=headers,
+    )
+    assert refund_response.status_code == 200, refund_response.text
+    refunded_profit = client.get(
+        "/api/v1/reports/profit",
+        params={"store_id": store_id},
+        headers=headers,
+    )
+    assert refunded_profit.status_code == 200, refunded_profit.text
+    assert refunded_profit.json()["cost_of_goods_sold"] == "250.00"
+    assert refunded_profit.json()["gross_profit"] == "950.00"
+
     inventory_report = client.get(
         "/api/v1/reports/inventory",
         params={"store_id": store_id},
@@ -166,6 +212,8 @@ def test_reports_dashboard_sales_profit_inventory_and_exports():
     assert dashboard.status_code == 200, dashboard.text
     assert dashboard.json()["sales"]["total_sales"] == "1200.00"
     assert dashboard.json()["store_performance"][0]["store_id"] == store_id
+    assert dashboard.json()["store_performance"][0]["net_cash"] == "900.00"
+    assert dashboard.json()["suppliers"]["total_payables"] == "2500.00"
 
     csv_report = client.get(
         "/api/v1/reports/export/csv",

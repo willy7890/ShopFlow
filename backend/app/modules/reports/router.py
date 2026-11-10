@@ -13,7 +13,7 @@ from app.modules.businesses.models import Membership, Store
 from app.modules.catalog.models import Product, ProductVariant
 from app.modules.customers.models import Customer, CustomerLedgerEntry
 from app.modules.finance.models import CashbookEntry
-from app.modules.inventory.models import InventoryBalance, Purchase, Supplier, SupplierPayment
+from app.modules.inventory.models import InventoryBalance, Purchase, StockMovement, Supplier, SupplierPayment
 from app.modules.reports.schemas import (
     DashboardReportOut,
     DebtorReportOut,
@@ -103,6 +103,44 @@ def _total_refunds_for_sales(membership: Membership, db: Session, sales: list[Sa
     )
     return _safe_decimal(total or 0)
 
+def _cost_of_goods_sold(membership: Membership, db: Session, sales: list[Sale]) -> Decimal:
+    total = Decimal("0")
+    for sale in sales:
+        legacy_cost_variants: set[str] = set()
+        for item in sale.items:
+            if item.unit_cost is not None:
+                total += Decimal(str(item.quantity)) * Decimal(str(item.unit_cost))
+                continue
+            if item.variant_id in legacy_cost_variants:
+                continue
+            legacy_cost_variants.add(item.variant_id)
+            movement_cost = (
+                db.query(func.coalesce(func.sum(StockMovement.quantity_delta * StockMovement.unit_cost), Decimal("0")))
+                .filter(
+                    StockMovement.business_id == membership.business_id,
+                    StockMovement.store_id == sale.store_id,
+                    StockMovement.reference_type == "sale",
+                    StockMovement.reference_id == sale.id,
+                    StockMovement.variant_id == item.variant_id,
+                    StockMovement.movement_type == "sale",
+                )
+                .scalar()
+            )
+            total += abs(_safe_decimal(movement_cost or 0))
+        returned_cost = (
+            db.query(func.coalesce(func.sum(StockMovement.quantity_delta * StockMovement.unit_cost), Decimal("0")))
+            .filter(
+                StockMovement.business_id == membership.business_id,
+                StockMovement.store_id == sale.store_id,
+                StockMovement.reference_type == "sale_refund",
+                StockMovement.reference_id == sale.id,
+                StockMovement.movement_type == "refund",
+            )
+            .scalar()
+        )
+        total -= _safe_decimal(returned_cost or 0)
+    return max(Decimal("0"), total)
+
 
 def _sale_items_sold(sales: list[Sale]) -> Decimal:
     total = Decimal("0")
@@ -137,13 +175,7 @@ def dashboard_report(
         end_date=end_date,
     )
 
-    cogs_total = Decimal("0")
-    for sale in sales:
-        for item in sale.items:
-            variant = db.query(ProductVariant).filter(ProductVariant.id == item.variant_id).first()
-            if variant:
-                cogs_total += Decimal(str(item.quantity)) * Decimal(str(variant.purchase_price or 0))
-    cogs_total = _money(cogs_total)
+    cogs_total = _money(_cost_of_goods_sold(membership, db, sales))
     gross_profit = _money(gross_sales - cogs_total)
     profit_report = ProfitReportOut(
         gross_revenue=gross_sales,
@@ -182,7 +214,8 @@ def dashboard_report(
             continue
         quantity = Decimal(str(balance.quantity))
         total_quantity += quantity
-        total_stock_value += quantity * Decimal(str(variant.purchase_price or 0))
+        unit_cost = Decimal(str(balance.average_cost or 0))
+        total_stock_value += quantity * unit_cost
         if quantity <= Decimal(str(variant.low_stock_threshold or 0)):
             low_stock.append({
                 "variant_id": variant.id,
@@ -190,7 +223,7 @@ def dashboard_report(
                 "sku": variant.sku,
                 "quantity": str(quantity),
                 "reorder_level": str(variant.low_stock_threshold or 0),
-                "stock_value": str(quantity * Decimal(str(variant.purchase_price or 0))),
+                "stock_value": str(quantity * unit_cost),
             })
 
     slow_moving = []
@@ -236,7 +269,10 @@ def dashboard_report(
     for customer in customer_rows:
         balance = (
             db.query(func.coalesce(func.sum(CustomerLedgerEntry.amount), Decimal("0")))
-            .filter(CustomerLedgerEntry.customer_id == customer.id)
+            .filter(
+                CustomerLedgerEntry.business_id == membership.business_id,
+                CustomerLedgerEntry.customer_id == customer.id,
+            )
             .scalar()
         )
         outstanding = _safe_decimal(balance or 0)
@@ -262,7 +298,11 @@ def dashboard_report(
     for supplier in supplier_rows:
         purchase_total = (
             db.query(func.coalesce(func.sum(Purchase.total_amount), Decimal("0")))
-            .filter(Purchase.business_id == membership.business_id, Purchase.supplier_id == supplier.id)
+            .filter(
+                Purchase.business_id == membership.business_id,
+                Purchase.supplier_id == supplier.id,
+                Purchase.status == "received",
+            )
             .scalar()
         )
         payment_total = (
@@ -292,15 +332,16 @@ def dashboard_report(
     for store in store_rows:
         filtered_sales = [sale for sale in sales if sale.store_id == store.id]
         sales_total = sum((sale.total_amount for sale in filtered_sales), Decimal("0"))
-        expense_entries = [entry for entry in _filtered_cashbook(membership, db, store.id, start_date, end_date) if entry.direction == "out"]
-        expense_total = sum((entry.amount for entry in expense_entries), Decimal("0"))
+        store_cashbook = _filtered_cashbook(membership, db, store.id, start_date, end_date)
+        expense_total = sum((entry.amount for entry in store_cashbook if entry.direction == "out"), Decimal("0"))
+        cash_total = sum((entry.amount for entry in store_cashbook if entry.direction == "in"), Decimal("0"))
         store_performance.append(
             StorePerformanceOut(
                 store_id=store.id,
                 store_name=store.name,
                 sales_total=sales_total,
                 expense_total=expense_total,
-                net_cash=sales_total - expense_total,
+                net_cash=cash_total - expense_total,
                 transaction_count=len(filtered_sales),
             )
         )
@@ -349,13 +390,7 @@ def profit_report(
     sales = _filtered_sales(membership, db, store_id, start_date, end_date)
     gross_sales = _money(sum((sale.total_amount for sale in sales), Decimal("0")))
     total_refunds = _money(_total_refunds_for_sales(membership, db, sales))
-    cost_of_goods_sold = Decimal("0")
-    for sale in sales:
-        for item in sale.items:
-            variant = db.query(ProductVariant).filter(ProductVariant.id == item.variant_id).first()
-            if variant:
-                cost_of_goods_sold += Decimal(str(item.quantity)) * Decimal(str(variant.purchase_price or 0))
-    cost_of_goods_sold = _money(cost_of_goods_sold)
+    cost_of_goods_sold = _money(_cost_of_goods_sold(membership, db, sales))
     gross_profit = _money(gross_sales - cost_of_goods_sold)
     return ProfitReportOut(
         gross_revenue=gross_sales,
@@ -405,7 +440,8 @@ def inventory_report(
         product = db.query(Product).filter(Product.id == variant.product_id).first()
         quantity = Decimal(str(balance.quantity))
         total_quantity += quantity
-        total_stock_value += quantity * Decimal(str(variant.purchase_price or 0))
+        unit_cost = Decimal(str(balance.average_cost or 0))
+        total_stock_value += quantity * unit_cost
         if quantity <= Decimal(str(variant.low_stock_threshold or 0)):
             low_stock_items.append({
                 "variant_id": variant.id,
@@ -413,7 +449,7 @@ def inventory_report(
                 "sku": variant.sku,
                 "quantity": str(quantity),
                 "reorder_level": str(variant.low_stock_threshold or 0),
-                "stock_value": str(quantity * Decimal(str(variant.purchase_price or 0))),
+                "stock_value": str(quantity * unit_cost),
             })
     return InventoryReportOut(
         total_variants=len(balances),
@@ -445,7 +481,10 @@ def customer_debt_report(
     for customer in customers:
         outstanding = (
             db.query(func.coalesce(func.sum(CustomerLedgerEntry.amount), Decimal("0")))
-            .filter(CustomerLedgerEntry.customer_id == customer.id)
+            .filter(
+                CustomerLedgerEntry.business_id == membership.business_id,
+                CustomerLedgerEntry.customer_id == customer.id,
+            )
             .scalar()
         )
         outstanding = _safe_decimal(outstanding or 0)
@@ -477,7 +516,11 @@ def supplier_report(
     for supplier in suppliers:
         purchases_total = (
             db.query(func.coalesce(func.sum(Purchase.total_amount), Decimal("0")))
-            .filter(Purchase.business_id == membership.business_id, Purchase.supplier_id == supplier.id)
+            .filter(
+                Purchase.business_id == membership.business_id,
+                Purchase.supplier_id == supplier.id,
+                Purchase.status == "received",
+            )
             .scalar()
         )
         payments_total = (
@@ -598,12 +641,13 @@ def store_performance_report(
         cashbook_entries = _filtered_cashbook(membership, db, store.id, start_date, end_date)
         sales_total = sum((sale.total_amount for sale in sales), Decimal("0"))
         expense_total = sum((entry.amount for entry in cashbook_entries if entry.direction == "out"), Decimal("0"))
+        cash_total = sum((entry.amount for entry in cashbook_entries if entry.direction == "in"), Decimal("0"))
         rows.append({
             "store_id": store.id,
             "store_name": store.name,
             "sales_total": str(sales_total),
             "expense_total": str(expense_total),
-            "net_cash": str(sales_total - expense_total),
+            "net_cash": str(cash_total - expense_total),
             "transaction_count": len(sales),
         })
     return rows
@@ -634,7 +678,10 @@ def export_csv(
         for customer in customers:
             balance = (
                 db.query(func.coalesce(func.sum(CustomerLedgerEntry.amount), Decimal("0")))
-                .filter(CustomerLedgerEntry.customer_id == customer.id)
+                .filter(
+                    CustomerLedgerEntry.business_id == membership.business_id,
+                    CustomerLedgerEntry.customer_id == customer.id,
+                )
                 .scalar()
             )
             rows.append([customer.id, customer.name, customer.phone or "", str(balance or 0)])
@@ -644,7 +691,11 @@ def export_csv(
         for supplier in suppliers:
             purchase_total = (
                 db.query(func.coalesce(func.sum(Purchase.total_amount), Decimal("0")))
-                .filter(Purchase.business_id == membership.business_id, Purchase.supplier_id == supplier.id)
+                .filter(
+                    Purchase.business_id == membership.business_id,
+                    Purchase.supplier_id == supplier.id,
+                    Purchase.status == "received",
+                )
                 .scalar()
             )
             payments_total = (

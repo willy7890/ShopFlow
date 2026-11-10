@@ -67,12 +67,14 @@ export default function ProductsScreen() {
       if (!current) {
         setProducts([])
         setCategories([])
+        setAuditEvents([])
         return
       }
+      const hasAuditAccess = await canReadAudit(database, current)
       const [currentProducts, currentCategories, currentEvents] = await Promise.all([
         listProducts(database, current, search),
         listCategories(database, current),
-        canReadAudit(database, current)
+        hasAuditAccess
           ? listProductAuditEvents(database, current, auditCategory || undefined)
           : Promise.resolve([]),
       ])

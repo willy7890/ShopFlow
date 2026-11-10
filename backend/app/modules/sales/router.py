@@ -7,8 +7,9 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.dependencies import get_business_membership, get_current_user, require_roles
 from app.modules.auth.models import User
+from app.modules.audit.service import record_product_event
 from app.modules.businesses.models import Membership, Store
-from app.modules.catalog.models import Product, ProductVariant
+from app.modules.catalog.models import Category, Product, ProductVariant
 from app.modules.customers.models import Customer, CustomerLedgerEntry
 from app.modules.inventory.models import InventoryBalance, StockMovement
 from app.modules.sales.models import Sale, SaleItem, SalePayment, SaleRefund
@@ -176,18 +177,8 @@ def create_sale(
             raise HTTPException(status_code=404, detail=f"Product for {line.variant_id} not found.")
         unit_price = line.unit_price if line.unit_price is not None else variant.selling_price
         line_total = unit_price * line.quantity
-        db.add(
-            SaleItem(
-                sale_id=sale.id,
-                variant_id=variant.id,
-                product_name=product.name,
-                variant_name=variant.name,
-                sku=variant.sku,
-                quantity=line.quantity,
-                unit_price=unit_price,
-                line_total=line_total,
-            )
-        )
+        balance = None
+        unit_cost = variant.purchase_price
         if variant.track_stock:
             balance = (
                 db.query(InventoryBalance)
@@ -209,6 +200,23 @@ def create_sale(
                 )
                 db.add(balance)
                 db.flush()
+            unit_cost = balance.average_cost or variant.purchase_price
+        db.add(
+            SaleItem(
+                sale_id=sale.id,
+                variant_id=variant.id,
+                product_name=product.name,
+                variant_name=variant.name,
+                sku=variant.sku,
+                quantity=line.quantity,
+                unit_price=unit_price,
+                line_total=line_total,
+                unit_cost=unit_cost,
+            )
+        )
+        if variant.track_stock:
+            assert balance is not None
+            quantity_before = Decimal(str(balance.quantity))
             balance.quantity = Decimal(str(balance.quantity)) - line.quantity
             balance.updated_at = datetime.now(timezone.utc)
             db.add(
@@ -218,12 +226,26 @@ def create_sale(
                     variant_id=variant.id,
                     movement_type="sale",
                     quantity_delta=-line.quantity,
-                    unit_cost=variant.purchase_price,
+                    unit_cost=unit_cost,
                     reference_type="sale",
                     reference_id=sale.id,
                     note="Point-of-sale sale",
                     created_by=current_user.id,
                 )
+            )
+            category = db.query(Category).filter(Category.id == product.category_id).first() if product.category_id else None
+            record_product_event(
+                db,
+                business_id=membership.business_id,
+                store_id=payload.store_id,
+                product_id=product.id,
+                variant_id=variant.id,
+                category_id=product.category_id,
+                category_name=category.name if category else "",
+                actor_id=current_user.id,
+                event_type="stock_adjusted",
+                before={"quantity": str(quantity_before)},
+                after={"quantity": str(balance.quantity), "reason": "Sale"},
             )
 
     for payment in payload.payments:
@@ -404,6 +426,11 @@ def refund_sale(
             .first()
         )
         added_quantity = _safe_decimal(item.quantity)
+        sale_item = db.query(SaleItem).filter(
+            SaleItem.sale_id == sale.id,
+            SaleItem.variant_id == variant.id,
+        ).first()
+        unit_cost = sale_item.unit_cost if sale_item and sale_item.unit_cost is not None else variant.purchase_price
         if inventory_balance is None:
             inventory_balance = InventoryBalance(
                 business_id=membership.business_id,
@@ -423,12 +450,28 @@ def refund_sale(
                 variant_id=variant.id,
                 movement_type="refund",
                 quantity_delta=added_quantity,
-                unit_cost=variant.purchase_price,
+                unit_cost=unit_cost,
                 reference_type="sale_refund",
                 reference_id=sale.id,
                 note=payload.reason,
                 created_by=current_user.id,
             )
+        )
+        product = db.query(Product).filter(Product.id == variant.product_id).first()
+        category = db.query(Category).filter(Category.id == product.category_id).first() if product and product.category_id else None
+        quantity_before = Decimal(str(inventory_balance.quantity)) - added_quantity
+        record_product_event(
+            db,
+            business_id=membership.business_id,
+            store_id=sale.store_id,
+            product_id=variant.product_id,
+            variant_id=variant.id,
+            category_id=product.category_id if product else None,
+            category_name=category.name if category else "",
+            actor_id=current_user.id,
+            event_type="stock_adjusted",
+            before={"quantity": str(quantity_before)},
+            after={"quantity": str(inventory_balance.quantity), "reason": "Sale refund"},
         )
 
     db.add(

@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from app.core.config import settings
 
@@ -20,6 +20,7 @@ def get_db():
 
 def init_db() -> None:
     from app.modules.auth import models as auth_models  # noqa: F401
+    from app.modules.audit import models as audit_models  # noqa: F401
     from app.modules.businesses import models as business_models  # noqa: F401
     from app.modules.catalog import models as catalog_models  # noqa: F401
     from app.modules.customers import models as customers_models  # noqa: F401
@@ -31,3 +32,11 @@ def init_db() -> None:
     from app.modules.subscriptions import models as subscriptions_models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    sale_item_columns = {column["name"] for column in inspect(engine).get_columns("sale_items")}
+    if "unit_cost" not in sale_item_columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE sale_items ADD COLUMN unit_cost NUMERIC(18, 2)"))
+    supplier_columns = {column["name"] for column in inspect(engine).get_columns("suppliers")}
+    if "is_active" not in supplier_columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE suppliers ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE"))

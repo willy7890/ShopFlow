@@ -28,6 +28,10 @@ import {
   recordCustomerPayment,
   recordSupplierBill,
   recordSupplierPayment,
+  setCustomerArchived,
+  setSupplierArchived,
+  updateCustomer,
+  updateSupplier,
 } from '../src/repositories/accounts.ts'
 import {
   cashbookEntriesToCsv,
@@ -35,6 +39,8 @@ import {
   getCashbookTotals,
   getLocalReport,
   listCashbookEntries,
+  recordOpeningBalance,
+  reconcileCashbook,
 } from '../src/repositories/cashbook.ts'
 import {
   assertPermission,
@@ -89,7 +95,7 @@ test('SQLite migrations, offline sale persistence and stock rollback are consist
   try {
     await migrateDatabase(database)
     await migrateDatabase(database)
-    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 9)
+    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 10)
 
     const workspace = await createWorkspace(database, {
       ownerName: 'Asha Mushi',
@@ -230,9 +236,14 @@ test('SQLite migrations, offline sale persistence and stock rollback are consist
       initialQuantity: 0,
       lowStockThreshold: 2,
     }, randomUUID)
-    assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM product_audit_events')).count, 3)
-    const auditHistory = await listProductAuditEvents(database, workspace, 'Tea')
-    assert.deepEqual(auditHistory.map(({ eventType }) => eventType), ['updated', 'stock_adjusted', 'created'])
+    assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM product_audit_events')).count, 4)
+    const auditHistory = await listProductAuditEvents(database, workspace, 'Beverages')
+    assert.deepEqual(auditHistory.map(({ eventType }) => eventType), [
+      'updated',
+      'stock_adjusted',
+      'stock_adjusted',
+      'created',
+    ])
     const [updatedProduct] = await listProducts(database, workspace, 'TEA-NEW')
     assert.equal(updatedProduct.name, 'Black Tea')
     assert.equal(updatedProduct.sellPriceMinor, 600)
@@ -447,6 +458,39 @@ test('customer debts and supplier payables are isolated, balanced and atomic', a
     assert.equal(report.supplierPayableMinor, 500)
     assert.deepEqual(report.topProducts.map((item) => item.name), ['Rice'])
 
+    await updateCustomer(database, workspace, customer.id, { name: 'Neema Updated' }, randomUUID)
+    await setCustomerArchived(database, workspace, customer.id, true, randomUUID)
+    assert.equal((await listCustomers(database, workspace)).length, 0)
+    assert.equal((await listCustomers(database, workspace, true))[0].name, 'Neema Updated')
+    assert.equal((await listCustomerLedgerEntries(database, workspace, customer.id)).length, 2)
+    await assert.rejects(recordCustomerPayment(database, workspace, customer.id, 100, '', randomUUID), /not available/)
+    await setCustomerArchived(database, workspace, customer.id, false, randomUUID)
+    assert.equal((await listCustomers(database, workspace))[0].isActive, 1)
+
+    await updateSupplier(database, workspace, supplier.id, { name: 'Grain Supplier Updated' }, randomUUID)
+    await setSupplierArchived(database, workspace, supplier.id, true, randomUUID)
+    assert.equal((await listSuppliers(database, workspace)).length, 0)
+    assert.equal((await listSuppliers(database, workspace, true))[0].name, 'Grain Supplier Updated')
+    assert.equal((await listSupplierLedgerEntries(database, workspace, supplier.id)).length, 2)
+    await assert.rejects(recordSupplierBill(database, workspace, supplier.id, 100, '', randomUUID), /not available/)
+    await setSupplierArchived(database, workspace, supplier.id, false, randomUUID)
+    assert.equal((await listSuppliers(database, workspace))[0].isActive, 1)
+
+    await recordOpeningBalance(database, workspace, {
+      entryType: 'income',
+      amountMinor: 2000,
+      note: 'Opening cash',
+    }, randomUUID)
+    await assert.rejects(recordOpeningBalance(database, workspace, {
+      entryType: 'income',
+      amountMinor: 100,
+      note: 'Duplicate',
+    }, randomUUID), /already been set/)
+    assert.equal(await reconcileCashbook(database, workspace, 3200, 'Counted cash', randomUUID), 50)
+    assert.equal(await reconcileCashbook(database, workspace, 3100, 'Corrected count', randomUUID), -100)
+    assert.equal(await reconcileCashbook(database, workspace, 3100, 'No variance', randomUUID), 0)
+    assert.deepEqual({ ...await getCashbookTotals(database, workspace) }, { incomeMinor: 3550, expenseMinor: 450 })
+
     await createStore(database, workspace, { name: 'Second Store', code: 'SECOND' }, randomUUID)
     const secondStore = (await listStores(database, workspace)).find((store) => store.code === 'SECOND')
     assert.ok(secondStore)
@@ -455,7 +499,7 @@ test('customer debts and supplier payables are isolated, balanced and atomic', a
     assert.ok(secondWorkspace)
     assert.equal((await listCustomers(database, secondWorkspace))[0].balanceMinor, 0)
     assert.equal((await listSuppliers(database, secondWorkspace))[0].balanceMinor, 0)
-    assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM outbox')).count, 11)
+    assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM outbox')).count, 20)
   } finally {
     database.close()
     rmSync(directory, { recursive: true, force: true })
@@ -612,7 +656,7 @@ test('version 1 local business data upgrades in place and persists the default l
 
     await migrateDatabase(database)
     await migrateDatabase(database)
-    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 9)
+    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 10)
     assert.equal((await database.getFirstAsync('SELECT name FROM businesses WHERE id = ?', 'business-v1')).name, 'Existing Shop')
     assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM user_store_permissions')).count, 8)
     assert.equal((await getActiveWorkspace(database)).userId, 'owner-v1')

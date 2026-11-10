@@ -66,11 +66,14 @@ async function performSync(
      WHERE business_id = ? AND status IN ('pending', 'failed', 'in_progress')
      ORDER BY CASE entity_type
        WHEN 'customer' THEN 0
-       WHEN 'supplier' THEN 1
-       WHEN 'customer_ledger' THEN 2
-       WHEN 'supplier_ledger' THEN 3
-       WHEN 'sale' THEN 4
-       ELSE 5
+       WHEN 'customer_update' THEN 1
+       WHEN 'supplier' THEN 2
+       WHEN 'supplier_update' THEN 3
+       WHEN 'customer_ledger' THEN 4
+       WHEN 'supplier_ledger' THEN 5
+       WHEN 'cashbook_entry' THEN 6
+       WHEN 'sale' THEN 7
+       ELSE 8
      END, created_at ASC, rowid ASC
      LIMIT 100`,
     workspace.businessId,

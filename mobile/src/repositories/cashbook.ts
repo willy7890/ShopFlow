@@ -37,6 +37,103 @@ export interface CashbookEntryFilter {
   search?: string
 }
 
+export interface OpeningBalance {
+  entryType: CashbookEntryType
+  amountMinor: number
+  createdAt: string
+}
+
+export async function getOpeningBalance(
+  database: SQLiteDatabase,
+  workspace: Workspace,
+): Promise<OpeningBalance | null> {
+  await assertActiveWorkspace(database, workspace)
+  await assertCashbookPermission(database, workspace)
+  return database.getFirstAsync<OpeningBalance>(
+    `SELECT entry_type AS entryType, amount_minor AS amountMinor, created_at AS createdAt
+     FROM cashbook_entries
+     WHERE business_id = ? AND store_id = ? AND reference_id = 'opening-balance'
+     LIMIT 1`,
+    workspace.businessId,
+    workspace.storeId,
+  )
+}
+
+export async function recordOpeningBalance(
+  database: SQLiteDatabase,
+  workspace: Workspace,
+  input: { entryType: CashbookEntryType; amountMinor: number; note: string },
+  createId: () => string,
+): Promise<void> {
+  await assertPermission(database, workspace, 'manage_settings')
+  if (!Number.isSafeInteger(input.amountMinor) || input.amountMinor <= 0) {
+    throw new Error('Opening balance must be a positive whole TZS amount.')
+  }
+  const note = input.note.trim()
+  if (note.length > 240) throw new Error('Note must be at most 240 characters.')
+  await database.withExclusiveTransactionAsync(async (transaction) => {
+    const existing = await transaction.getFirstAsync<{ id: string }>(
+      `SELECT id FROM cashbook_entries
+       WHERE business_id = ? AND store_id = ? AND reference_id = 'opening-balance'`,
+      workspace.businessId,
+      workspace.storeId,
+    )
+    if (existing) throw new Error('The opening balance has already been set for this store.')
+    await writeCashbookEntry(transaction, workspace, {
+      entryType: input.entryType,
+      source: 'manual',
+      category: 'Opening balance',
+      amountMinor: input.amountMinor,
+      note,
+      referenceId: 'opening-balance',
+      createdAt: new Date().toISOString(),
+    }, createId)
+  })
+}
+
+export async function reconcileCashbook(
+  database: SQLiteDatabase,
+  workspace: Workspace,
+  countedBalanceMinor: number,
+  note: string,
+  createId: () => string,
+): Promise<number> {
+  await assertPermission(database, workspace, 'manage_settings')
+  if (!Number.isSafeInteger(countedBalanceMinor) || countedBalanceMinor < 0) {
+    throw new Error('Counted cash must be a non-negative whole TZS amount.')
+  }
+  const cleanNote = note.trim()
+  if (cleanNote.length < 2 || cleanNote.length > 240) {
+    throw new Error('Enter a reconciliation note of 2 to 240 characters.')
+  }
+  let difference = 0
+  await database.withExclusiveTransactionAsync(async (transaction) => {
+    const totals = await transaction.getFirstAsync<CashbookTotals>(
+      `SELECT
+         COALESCE(SUM(CASE WHEN entry_type = 'income' THEN amount_minor ELSE 0 END), 0) AS incomeMinor,
+         COALESCE(SUM(CASE WHEN entry_type = 'expense' THEN amount_minor ELSE 0 END), 0) AS expenseMinor
+       FROM cashbook_entries
+       WHERE business_id = ? AND store_id = ?`,
+      workspace.businessId,
+      workspace.storeId,
+    )
+    difference = countedBalanceMinor - (
+      Number(totals?.incomeMinor ?? 0) - Number(totals?.expenseMinor ?? 0)
+    )
+    if (difference === 0) return
+    await writeCashbookEntry(transaction, workspace, {
+      entryType: difference > 0 ? 'income' : 'expense',
+      source: 'manual',
+      category: 'Reconciliation adjustment',
+      amountMinor: Math.abs(difference),
+      note: cleanNote,
+      referenceId: `reconciliation-${createId()}`,
+      createdAt: new Date().toISOString(),
+    }, createId)
+  })
+  return difference
+}
+
 export async function getCashbookTotals(
   database: SQLiteDatabase,
   workspace: Workspace,
@@ -105,7 +202,7 @@ async function assertCashbookPermission(
     `SELECT 1 AS allowed
      FROM user_store_permissions
      WHERE business_id = ? AND store_id = ? AND user_id = ?
-       AND permission IN ('sell', 'manage_inventory', 'view_reports')
+       AND permission IN ('sell', 'manage_inventory', 'view_reports', 'manage_settings')
      LIMIT 1`,
     workspace.businessId,
     workspace.storeId,

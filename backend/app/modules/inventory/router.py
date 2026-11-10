@@ -20,7 +20,10 @@ def create_supplier(payload: SupplierCreate, membership: Membership = Depends(re
 
 @router.get("/suppliers", response_model=list[SupplierOut])
 def list_suppliers(membership: Membership = Depends(get_business_membership), db: Session = Depends(get_db)):
-    return db.query(Supplier).filter(Supplier.business_id == membership.business_id).order_by(Supplier.name).all()
+    return db.query(Supplier).filter(
+        Supplier.business_id == membership.business_id,
+        Supplier.is_active.is_(True),
+    ).order_by(Supplier.name).all()
 
 @router.post("/suppliers/{supplier_id}/payments", response_model=SupplierPaymentOut, status_code=201)
 def create_supplier_payment(

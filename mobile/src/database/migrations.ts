@@ -416,6 +416,12 @@ CREATE INDEX idx_product_audit_scope_created
   ON product_audit_events(business_id, store_id, category_id, created_at DESC);
 `
 
+const PHASE_TEN_SCHEMA = `
+CREATE UNIQUE INDEX idx_cashbook_one_opening_balance
+  ON cashbook_entries(business_id, store_id)
+  WHERE source = 'manual' AND reference_id = 'opening-balance';
+`
+
 export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {
   await database.execAsync('PRAGMA foreign_keys = ON;')
 
@@ -423,7 +429,7 @@ export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {
     'PRAGMA user_version',
   ) ?? { user_version: 0 }
 
-  if (currentVersion > 9) {
+  if (currentVersion > 10) {
     throw new Error(`Database version ${currentVersion} is newer than this application supports.`)
   }
 
@@ -487,6 +493,13 @@ export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {
     await database.withExclusiveTransactionAsync(async (transaction) => {
       await transaction.execAsync(PHASE_NINE_SCHEMA)
       await transaction.execAsync('PRAGMA user_version = 9;')
+    })
+  }
+
+  if (currentVersion < 10) {
+    await database.withExclusiveTransactionAsync(async (transaction) => {
+      await transaction.execAsync(PHASE_TEN_SCHEMA)
+      await transaction.execAsync('PRAGMA user_version = 10;')
     })
   }
 }

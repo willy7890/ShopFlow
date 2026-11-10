@@ -11,10 +11,14 @@ import {
   createManualCashbookEntry,
   cashbookEntriesToCsv,
   getCashbookTotals,
+  getOpeningBalance,
   listCashbookEntries,
+  reconcileCashbook,
+  recordOpeningBalance,
   type CashbookEntry,
   type CashbookEntryType,
   type CashbookTotals,
+  type OpeningBalance,
 } from '@/src/repositories/cashbook'
 import { getActiveWorkspace, type Permission, type Workspace } from '@/src/repositories/workspace'
 import { useI18n } from '@/src/i18n/I18nProvider'
@@ -29,6 +33,11 @@ export default function CashbookScreen() {
   const [permissions, setPermissions] = useState<Permission[]>([])
   const [entries, setEntries] = useState<CashbookEntry[]>([])
   const [totals, setTotals] = useState<CashbookTotals>({ incomeMinor: 0, expenseMinor: 0 })
+  const [openingBalance, setOpeningBalance] = useState<OpeningBalance | null>(null)
+  const [openingAmount, setOpeningAmount] = useState('')
+  const [openingNote, setOpeningNote] = useState('')
+  const [countedBalance, setCountedBalance] = useState('')
+  const [reconciliationNote, setReconciliationNote] = useState('')
   const [entryType, setEntryType] = useState<CashbookEntryType>('income')
   const [category, setCategory] = useState('')
   const [amount, setAmount] = useState('')
@@ -53,7 +62,7 @@ export default function CashbookScreen() {
         return
       }
       const userPermissions = current.role === 'owner'
-        ? ['sell', 'manage_inventory', 'view_reports'] as Permission[]
+        ? ['sell', 'manage_inventory', 'view_reports', 'manage_settings'] as Permission[]
         : (await database.getAllAsync<{ permission: Permission }>(
           `SELECT permission FROM user_store_permissions
            WHERE business_id = ? AND store_id = ? AND user_id = ?`,
@@ -70,8 +79,10 @@ export default function CashbookScreen() {
         listCashbookEntries(database, current, { days, search }),
         getCashbookTotals(database, current),
       ])
+      const currentOpeningBalance = await getOpeningBalance(database, current)
       setEntries(nextEntries)
       setTotals(nextTotals)
+      setOpeningBalance(currentOpeningBalance)
     } finally {
       setLoading(false)
     }
@@ -84,7 +95,10 @@ export default function CashbookScreen() {
   const canRecordIncome = permissions.includes('sell')
   const canRecordExpense = permissions.includes('manage_inventory')
   const parsedAmount = parseTzsAmount(amount)
+  const parsedOpeningAmount = parseTzsAmount(openingAmount)
+  const parsedCountedBalance = parseTzsAmount(countedBalance)
   const net = totals.incomeMinor - totals.expenseMinor
+  const canManageCashbookSettings = permissions.includes('manage_settings')
 
   const saveEntry = () => {
     if (!workspace || parsedAmount === null) return
@@ -131,6 +145,54 @@ export default function CashbookScreen() {
     }
   }
 
+  const saveOpeningBalance = async () => {
+    if (!workspace || parsedOpeningAmount === null || parsedOpeningAmount <= 0) return
+    setSaving(true)
+    setError(null)
+    setNotice(null)
+    try {
+      await recordOpeningBalance(database, workspace, {
+        entryType,
+        amountMinor: parsedOpeningAmount,
+        note: openingNote,
+      }, () => Crypto.randomUUID())
+      setOpeningAmount('')
+      setOpeningNote('')
+      setNotice(t('cashbook.openingSaved'))
+      await load()
+    } catch (reason) {
+      setError(localizeError(reason, 'cashbook.saveError'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const saveReconciliation = async () => {
+    if (!workspace || parsedCountedBalance === null) return
+    setSaving(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const difference = await reconcileCashbook(
+        database,
+        workspace,
+        parsedCountedBalance,
+        reconciliationNote,
+        () => Crypto.randomUUID(),
+      )
+      setCountedBalance('')
+      setReconciliationNote('')
+      setNotice(t(difference === 0 ? 'cashbook.reconciled' : 'cashbook.reconciliationSaved', {
+        amount: formatTzs(Math.abs(difference), language),
+      }))
+      await load()
+    } catch (reason) {
+      setError(localizeError(reason, 'cashbook.saveError'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   if (loading) return <Screen><LoadingState label={t('common.loading')} /></Screen>
   if (!workspace) return <Screen><PageTitle title={t('cashbook.title')} /><Card><Text style={styles.muted}>{t('cashbook.signInRequired')}</Text></Card></Screen>
 
@@ -145,6 +207,55 @@ export default function CashbookScreen() {
           <Text style={styles.expense}>{t('cashbook.expense')}: {formatTzs(totals.expenseMinor, language)}</Text>
         </View>
       </Card>
+
+      {canManageCashbookSettings ? (
+        <Card>
+          <Text style={styles.sectionTitle}>{t('cashbook.openingBalance')}</Text>
+          {openingBalance ? (
+            <Text style={styles.muted}>
+              {t('cashbook.openingSet', {
+                amount: `${openingBalance.entryType === 'expense' ? '−' : ''}${formatTzs(openingBalance.amountMinor, language)}`,
+              })}
+            </Text>
+          ) : (
+            <>
+              <Text style={styles.muted}>{t('cashbook.openingHelp')}</Text>
+              <View style={styles.typeRow}>
+                {(['income', 'expense'] as const).map((type) => (
+                  <Pressable
+                    key={type}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: entryType === type }}
+                    onPress={() => setEntryType(type)}
+                    style={[styles.typeButton, entryType === type && styles.selectedType]}
+                  >
+                    <Text style={styles.typeText}>{t(type === 'income' ? 'cashbook.cashOnHand' : 'cashbook.overdraft')}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Field label={t('cashbook.amount')} value={openingAmount} onChangeText={setOpeningAmount} keyboardType="number-pad" />
+              <Field label={t('cashbook.note')} value={openingNote} onChangeText={setOpeningNote} />
+              <Button
+                label={t('cashbook.setOpeningBalance')}
+                onPress={() => void saveOpeningBalance()}
+                disabled={saving || parsedOpeningAmount === null || parsedOpeningAmount <= 0}
+              />
+            </>
+          )}
+          <Text style={styles.sectionTitle}>{t('cashbook.reconcile')}</Text>
+          <Text style={styles.muted}>{t('cashbook.reconcileHelp', {
+            balance: `${net < 0 ? '−' : ''}${formatTzs(Math.abs(net), language)}`,
+          })}</Text>
+          <Field label={t('cashbook.countedCash')} value={countedBalance} onChangeText={setCountedBalance} keyboardType="number-pad" />
+          <Field label={t('cashbook.reconcileNote')} value={reconciliationNote} onChangeText={setReconciliationNote} />
+          <Button
+            label={t('cashbook.reconcile')}
+            secondary
+            onPress={() => void saveReconciliation()}
+            disabled={saving || parsedCountedBalance === null || reconciliationNote.trim().length < 2}
+          />
+        </Card>
+      ) : null}
 
       {canRecordIncome || canRecordExpense ? (
         <Card>

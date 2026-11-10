@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import * as Crypto from 'expo-crypto'
 import { useFocusEffect } from 'expo-router'
 import { useSQLiteContext } from 'expo-sqlite'
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native'
 import { Button, Card, Field, LoadingState, PageTitle, Screen } from '@/src/components/NativeUi'
 import { parseTzsAmount, formatTzs } from '@/src/domain/money'
 import {
@@ -15,6 +15,10 @@ import {
   recordCustomerPayment,
   recordSupplierBill,
   recordSupplierPayment,
+  setCustomerArchived,
+  setSupplierArchived,
+  updateCustomer,
+  updateSupplier,
   type CustomerAccount,
   type AccountLedgerEntry,
   type SupplierAccount,
@@ -40,6 +44,14 @@ export default function AccountsScreen() {
   const [supplierSearch, setSupplierSearch] = useState('')
   const [customersWithBalanceOnly, setCustomersWithBalanceOnly] = useState(false)
   const [suppliersWithBalanceOnly, setSuppliersWithBalanceOnly] = useState(false)
+  const [includeArchivedCustomers, setIncludeArchivedCustomers] = useState(false)
+  const [includeArchivedSuppliers, setIncludeArchivedSuppliers] = useState(false)
+  const [editingCustomer, setEditingCustomer] = useState(false)
+  const [editingSupplier, setEditingSupplier] = useState(false)
+  const [customerEditName, setCustomerEditName] = useState('')
+  const [customerEditPhone, setCustomerEditPhone] = useState('')
+  const [supplierEditName, setSupplierEditName] = useState('')
+  const [supplierEditPhone, setSupplierEditPhone] = useState('')
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
   const [customerAmount, setCustomerAmount] = useState('')
@@ -76,8 +88,8 @@ export default function AccountsScreen() {
         )).map(({ permission }) => permission)
       setPermissions(userPermissions)
       const [nextCustomers, nextSuppliers] = await Promise.all([
-        userPermissions.includes('sell') ? listCustomers(database, current) : Promise.resolve([]),
-        userPermissions.includes('manage_inventory') ? listSuppliers(database, current) : Promise.resolve([]),
+        userPermissions.includes('sell') ? listCustomers(database, current, includeArchivedCustomers) : Promise.resolve([]),
+        userPermissions.includes('manage_inventory') ? listSuppliers(database, current, includeArchivedSuppliers) : Promise.resolve([]),
       ])
       setCustomers(nextCustomers)
       setSuppliers(nextSuppliers)
@@ -86,7 +98,7 @@ export default function AccountsScreen() {
     } finally {
       setLoading(false)
     }
-  }, [database])
+  }, [database, includeArchivedCustomers, includeArchivedSuppliers])
 
   useFocusEffect(useCallback(() => {
     void load().catch((reason: unknown) => setError(localizeError(reason, 'accounts.loadError')))
@@ -129,8 +141,8 @@ export default function AccountsScreen() {
     return matchesSearch && (!suppliersWithBalanceOnly || supplier.balanceMinor > 0)
   }), [supplierSearch, suppliers, suppliersWithBalanceOnly])
 
-  const runAction = async (action: () => Promise<void>, successMessage: string) => {
-    if (!workspace) return
+  const runAction = async (action: () => Promise<void>, successMessage: string): Promise<boolean> => {
+    if (!workspace) return false
     setSaving(true)
     setError(null)
     setNotice(null)
@@ -138,8 +150,10 @@ export default function AccountsScreen() {
       await action()
       await load()
       setNotice(successMessage)
+      return true
     } catch (reason) {
       setError(localizeError(reason, 'accounts.saveError'))
+      return false
     } finally {
       setSaving(false)
     }
@@ -147,6 +161,8 @@ export default function AccountsScreen() {
 
   const parsedCustomerAmount = parseTzsAmount(customerAmount)
   const parsedSupplierAmount = parseTzsAmount(supplierAmount)
+  const selectedCustomer = customers.find(({ id }) => id === selectedCustomerId)
+  const selectedSupplier = suppliers.find(({ id }) => id === selectedSupplierId)
   const canSell = permissions.includes('sell')
   const canManageInventory = permissions.includes('manage_inventory')
 
@@ -169,6 +185,14 @@ export default function AccountsScreen() {
           >
             <Text style={styles.filterText}>{t(customersWithBalanceOnly ? 'accounts.showAll' : 'accounts.showOutstanding')}</Text>
           </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ selected: includeArchivedCustomers }}
+            onPress={() => setIncludeArchivedCustomers((current) => !current)}
+            style={styles.balanceFilter}
+          >
+            <Text style={styles.filterText}>{t(includeArchivedCustomers ? 'accounts.hideArchived' : 'accounts.showArchived')}</Text>
+          </Pressable>
           {filteredCustomers.length === 0
             ? <Text style={styles.muted}>{customers.length === 0 ? t('accounts.noCustomers') : t('accounts.noMatches')}</Text>
             : filteredCustomers.map((customer) => (
@@ -180,7 +204,7 @@ export default function AccountsScreen() {
               style={[styles.accountRow, selectedCustomerId === customer.id && styles.selectedRow]}
             >
               <View style={styles.accountInfo}>
-                <Text style={styles.accountName}>{customer.name}</Text>
+                <Text style={styles.accountName}>{customer.name}{customer.isActive ? '' : ` · ${t('accounts.archived')}`}</Text>
                 {!!customer.phone && <Text style={styles.muted}>{customer.phone}</Text>}
               </View>
               <Text style={[styles.balance, customer.balanceMinor > 0 && styles.debt]}>
@@ -221,21 +245,72 @@ export default function AccountsScreen() {
           />
           {selectedCustomerId ? (
             <>
-              <Field label={t('accounts.collectAmount')} value={customerAmount} onChangeText={setCustomerAmount} keyboardType="number-pad" />
-              <Field label={t('accounts.noteOptional')} value={customerNote} onChangeText={setCustomerNote} />
-              <Button
-                label={t('accounts.recordCollection')}
-                disabled={saving || parsedCustomerAmount === null || parsedCustomerAmount <= 0}
-                onPress={() => {
-                  const amount = parsedCustomerAmount
-                  if (amount === null || !selectedCustomerId) return
-                  void runAction(async () => {
-                    await recordCustomerPayment(database, workspace, selectedCustomerId, amount, customerNote, () => Crypto.randomUUID())
-                    setCustomerAmount('')
-                    setCustomerNote('')
-                  }, t('accounts.collectionSaved'))
-                }}
-              />
+              {selectedCustomer ? (
+                <>
+                  <Button
+                    label={t(editingCustomer ? 'accounts.cancelEdit' : 'accounts.edit')}
+                    secondary
+                    onPress={() => {
+                      setEditingCustomer((current) => !current)
+                      setCustomerEditName(selectedCustomer.name)
+                      setCustomerEditPhone(selectedCustomer.phone)
+                    }}
+                  />
+                  {editingCustomer && selectedCustomer.isActive ? (
+                    <>
+                      <Field label={t('accounts.customerName')} value={customerEditName} onChangeText={setCustomerEditName} />
+                      <Field label={t('accounts.phone')} value={customerEditPhone} onChangeText={setCustomerEditPhone} keyboardType="phone-pad" />
+                      <Button
+                        label={t('accounts.saveEdit')}
+                        disabled={saving}
+                        onPress={() => void runAction(
+                          () => updateCustomer(database, workspace, selectedCustomer.id, { name: customerEditName, phone: customerEditPhone }, () => Crypto.randomUUID()),
+                          t('accounts.updated'),
+                        ).then((saved) => { if (saved) setEditingCustomer(false) })}
+                      />
+                    </>
+                  ) : null}
+                  <Button
+                    label={t(selectedCustomer.isActive ? 'accounts.archive' : 'accounts.restore')}
+                    secondary
+                    disabled={saving}
+                    onPress={() => Alert.alert(
+                      t(selectedCustomer.isActive ? 'accounts.archiveTitle' : 'accounts.restoreTitle'),
+                      t('accounts.archiveMessage'),
+                      [
+                        { text: t('common.cancel'), style: 'cancel' },
+                        {
+                          text: t(selectedCustomer.isActive ? 'accounts.archive' : 'accounts.restore'),
+                          style: selectedCustomer.isActive ? 'destructive' : 'default',
+                          onPress: () => void runAction(
+                            () => setCustomerArchived(database, workspace, selectedCustomer.id, Boolean(selectedCustomer.isActive), () => Crypto.randomUUID()),
+                            t(selectedCustomer.isActive ? 'accounts.archivedNotice' : 'accounts.restoredNotice'),
+                          ),
+                        },
+                      ],
+                    )}
+                  />
+                </>
+              ) : null}
+              {selectedCustomer?.isActive ? (
+                <>
+                  <Field label={t('accounts.collectAmount')} value={customerAmount} onChangeText={setCustomerAmount} keyboardType="number-pad" />
+                  <Field label={t('accounts.noteOptional')} value={customerNote} onChangeText={setCustomerNote} />
+                  <Button
+                    label={t('accounts.recordCollection')}
+                    disabled={saving || parsedCustomerAmount === null || parsedCustomerAmount <= 0}
+                    onPress={() => {
+                      const amount = parsedCustomerAmount
+                      if (amount === null || !selectedCustomerId) return
+                      void runAction(async () => {
+                        await recordCustomerPayment(database, workspace, selectedCustomerId, amount, customerNote, () => Crypto.randomUUID())
+                        setCustomerAmount('')
+                        setCustomerNote('')
+                      }, t('accounts.collectionSaved'))
+                    }}
+                  />
+                </>
+              ) : null}
             </>
           ) : null}
         </Card>
@@ -254,6 +329,14 @@ export default function AccountsScreen() {
           >
             <Text style={styles.filterText}>{t(suppliersWithBalanceOnly ? 'accounts.showAll' : 'accounts.showOutstanding')}</Text>
           </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ selected: includeArchivedSuppliers }}
+            onPress={() => setIncludeArchivedSuppliers((current) => !current)}
+            style={styles.balanceFilter}
+          >
+            <Text style={styles.filterText}>{t(includeArchivedSuppliers ? 'accounts.hideArchived' : 'accounts.showArchived')}</Text>
+          </Pressable>
           {filteredSuppliers.length === 0
             ? <Text style={styles.muted}>{suppliers.length === 0 ? t('accounts.noSuppliers') : t('accounts.noMatches')}</Text>
             : filteredSuppliers.map((supplier) => (
@@ -265,7 +348,7 @@ export default function AccountsScreen() {
               style={[styles.accountRow, selectedSupplierId === supplier.id && styles.selectedRow]}
             >
               <View style={styles.accountInfo}>
-                <Text style={styles.accountName}>{supplier.name}</Text>
+                <Text style={styles.accountName}>{supplier.name}{supplier.isActive ? '' : ` · ${t('accounts.archived')}`}</Text>
                 {!!supplier.phone && <Text style={styles.muted}>{supplier.phone}</Text>}
               </View>
               <Text style={[styles.balance, supplier.balanceMinor > 0 && styles.debt]}>
@@ -306,6 +389,55 @@ export default function AccountsScreen() {
           />
           {selectedSupplierId ? (
             <>
+              {selectedSupplier ? (
+                <>
+                  <Button
+                    label={t(editingSupplier ? 'accounts.cancelEdit' : 'accounts.edit')}
+                    secondary
+                    onPress={() => {
+                      setEditingSupplier((current) => !current)
+                      setSupplierEditName(selectedSupplier.name)
+                      setSupplierEditPhone(selectedSupplier.phone)
+                    }}
+                  />
+                  {editingSupplier && selectedSupplier.isActive ? (
+                    <>
+                      <Field label={t('accounts.supplierName')} value={supplierEditName} onChangeText={setSupplierEditName} />
+                      <Field label={t('accounts.phone')} value={supplierEditPhone} onChangeText={setSupplierEditPhone} keyboardType="phone-pad" />
+                      <Button
+                        label={t('accounts.saveEdit')}
+                        disabled={saving}
+                        onPress={() => void runAction(
+                          () => updateSupplier(database, workspace, selectedSupplier.id, { name: supplierEditName, phone: supplierEditPhone }, () => Crypto.randomUUID()),
+                          t('accounts.updated'),
+                        ).then((saved) => { if (saved) setEditingSupplier(false) })}
+                      />
+                    </>
+                  ) : null}
+                  <Button
+                    label={t(selectedSupplier.isActive ? 'accounts.archive' : 'accounts.restore')}
+                    secondary
+                    disabled={saving}
+                    onPress={() => Alert.alert(
+                      t(selectedSupplier.isActive ? 'accounts.archiveTitle' : 'accounts.restoreTitle'),
+                      t('accounts.archiveMessage'),
+                      [
+                        { text: t('common.cancel'), style: 'cancel' },
+                        {
+                          text: t(selectedSupplier.isActive ? 'accounts.archive' : 'accounts.restore'),
+                          style: selectedSupplier.isActive ? 'destructive' : 'default',
+                          onPress: () => void runAction(
+                            () => setSupplierArchived(database, workspace, selectedSupplier.id, Boolean(selectedSupplier.isActive), () => Crypto.randomUUID()),
+                            t(selectedSupplier.isActive ? 'accounts.archivedNotice' : 'accounts.restoredNotice'),
+                          ),
+                        },
+                      ],
+                    )}
+                  />
+                </>
+              ) : null}
+              {selectedSupplier?.isActive ? (
+              <>
               <Field label={t('accounts.amount')} value={supplierAmount} onChangeText={setSupplierAmount} keyboardType="number-pad" />
               <Field label={t('accounts.noteOptional')} value={supplierNote} onChangeText={setSupplierNote} />
               <Button
@@ -335,6 +467,8 @@ export default function AccountsScreen() {
                   }, t('accounts.paymentSaved'))
                 }}
               />
+              </>
+              ) : null}
             </>
           ) : null}
         </Card>
