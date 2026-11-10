@@ -15,7 +15,7 @@ from app.modules.businesses.models import Membership
 from app.modules.customers.models import Customer, CustomerLedgerEntry
 from app.modules.finance.models import CashbookEntry
 from app.modules.inventory.models import Purchase, Supplier, SupplierPayment
-from app.modules.sales.router import create_sale
+from app.modules.sales.router import _create_sale
 from app.modules.sales.schemas import SaleCreate
 from app.modules.sync.models import SyncDevice, SyncOperation
 from app.modules.sync.schemas import SyncDeviceCreate, SyncDeviceOut, SyncOperationOut, SyncPushRequest, SyncPushResult, SyncStatusOut
@@ -524,11 +524,12 @@ def push_sync_items(
                         for payment in normalized["payments"]
                     ],
                 )
-                sale = create_sale(
+                sale = _create_sale(
                     payload=sale_payload,
                     membership=membership,
                     db=db,
                     current_user=current_user,
+                    record_cashbook=False,
                 )
                 message = sale.sale_number if hasattr(sale, "sale_number") else "synced"
             else:

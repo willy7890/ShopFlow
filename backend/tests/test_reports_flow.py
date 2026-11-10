@@ -212,7 +212,7 @@ def test_reports_dashboard_sales_profit_inventory_and_exports():
     assert dashboard.status_code == 200, dashboard.text
     assert dashboard.json()["sales"]["total_sales"] == "1200.00"
     assert dashboard.json()["store_performance"][0]["store_id"] == store_id
-    assert dashboard.json()["store_performance"][0]["net_cash"] == "900.00"
+    assert dashboard.json()["store_performance"][0]["net_cash"] == "300.00"
     assert dashboard.json()["suppliers"]["total_payables"] == "2500.00"
 
     csv_report = client.get(

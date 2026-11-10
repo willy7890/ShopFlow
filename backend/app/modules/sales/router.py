@@ -11,6 +11,7 @@ from app.modules.audit.service import record_product_event
 from app.modules.businesses.models import Membership, Store
 from app.modules.catalog.models import Category, Product, ProductVariant
 from app.modules.customers.models import Customer, CustomerLedgerEntry
+from app.modules.finance.models import CashbookEntry
 from app.modules.inventory.models import InventoryBalance, StockMovement
 from app.modules.sales.models import Sale, SaleItem, SalePayment, SaleRefund
 from app.modules.sales.schemas import (
@@ -71,6 +72,17 @@ def create_sale(
     membership: Membership = Depends(require_roles("owner", "manager", "store_manager", "cashier", "accountant", "inventory_manager")),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+):
+    return _create_sale(payload, membership, db, current_user, record_cashbook=True)
+
+
+def _create_sale(
+    payload: SaleCreate,
+    membership: Membership,
+    db: Session,
+    current_user: User,
+    *,
+    record_cashbook: bool,
 ):
     _ensure_store_access(membership, payload.store_id, db)
     if not payload.items:
@@ -251,16 +263,30 @@ def create_sale(
     for payment in payload.payments:
         if payment.method not in VALID_PAYMENT_METHODS:
             raise HTTPException(status_code=422, detail=f"Unsupported payment method: {payment.method}")
+        payment_amount = _safe_decimal(payment.amount)
         db.add(
             SalePayment(
                 sale_id=sale.id,
                 method=payment.method,
-                amount=_safe_decimal(payment.amount),
+                amount=payment_amount,
                 reference=payment.reference,
                 status="confirmed" if payment.method != "credit" else "pending",
                 note=payment.note,
             )
         )
+        if record_cashbook and payment.method != "credit" and payment_amount > 0:
+            db.add(CashbookEntry(
+                business_id=membership.business_id,
+                store_id=payload.store_id,
+                entry_type="sale_receipt",
+                direction="in",
+                amount=payment_amount,
+                category=f"Sale ({payment.method})",
+                reference_type="sale",
+                reference_id=sale.id,
+                note=payment.note,
+                created_by=current_user.id,
+            ))
         if sale.customer_id:
             db.add(
                 CustomerLedgerEntry(
@@ -474,15 +500,27 @@ def refund_sale(
             after={"quantity": str(inventory_balance.quantity), "reason": "Sale refund"},
         )
 
-    db.add(
-        SaleRefund(
-            sale_id=sale.id,
-            amount=refund_total,
-            reason=payload.reason,
-            note=payload.note,
-            created_by=current_user.id,
-        )
+    refund = SaleRefund(
+        sale_id=sale.id,
+        amount=refund_total,
+        reason=payload.reason,
+        note=payload.note,
+        created_by=current_user.id,
     )
+    db.add(refund)
+    db.flush()
+    db.add(CashbookEntry(
+        business_id=membership.business_id,
+        store_id=sale.store_id,
+        entry_type="sale_refund",
+        direction="out",
+        amount=refund_total,
+        category="Sale refund",
+        reference_type="sale_refund",
+        reference_id=refund.id,
+        note=payload.reason,
+        created_by=current_user.id,
+    ))
     sale.paid_amount = sale.paid_amount - refund_total
     sale.balance_due = max(Decimal("0"), sale.total_amount - sale.paid_amount)
     sale.status = _normalize_sale_status(sale.total_amount, sale.paid_amount)
