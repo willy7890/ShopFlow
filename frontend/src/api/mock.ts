@@ -29,7 +29,7 @@ let name = 'Mmiliki'
 let userEmail = 'owner@example.com'
 
 const me = (): T.Me => ({
-  user: { id: 'u1', name, email: userEmail, role, permissions: PERMS[role] }, business, stores,
+  user: { id: 'u1', name, email: userEmail, role, permissions: PERMS[role], isSuperAdmin: false }, business, stores,
   entitlements: { plan, status: 'active', renew: '2026-12-01', ...PLANS[plan] },
 })
 
@@ -321,5 +321,16 @@ export const mockApi: Api = {
     },
     async updateEmployee(id, patch) { await lat(); employees = employees.map((e) => (e.id === id ? { ...e, ...patch } : e)) },
     async setPlan(p) { await lat(); plan = p; if (business) business.mode = p === 'book' ? 'quick' : 'pos'; return me() },
+  },
+  platformAdmin: {
+    async analytics() { await lat(); return { business_count: 0, active_business_count: 0, user_count: 0, active_subscription_count: 0, pending_subscription_count: 0, confirmed_subscription_revenue: null, currency: null } },
+    async businesses() { await lat(); return [] },
+    async users() { await lat(); return [] },
+    async plans() { await lat(); return [] },
+    async audit() { await lat(); return [] },
+    async createPlan() { await lat() },
+    async setBusinessStatus() { await lat() },
+    async setUserStatus() { await lat() },
+    async grantPlan() { await lat() },
   },
 }

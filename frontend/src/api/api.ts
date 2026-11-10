@@ -53,4 +53,15 @@ export interface Api {
     employees(): Promise<T.Employee[]>; invite(d: { email: string; role: T.Role; stores: string[]; permissions: string[] }): Promise<void>
     updateEmployee(id: string, patch: Partial<T.Employee>): Promise<void>; setPlan(plan: 'pro' | 'book'): Promise<T.Me>
   }
+  platformAdmin: {
+    analytics(): Promise<T.PlatformAnalytics>
+    businesses(): Promise<T.AdminBusiness[]>
+    users(): Promise<T.PlatformUser[]>
+    plans(): Promise<T.AdminPlan[]>
+    audit(): Promise<T.PlatformAudit[]>
+    createPlan(input: { slug: string; name: string; price: string; currency: string; duration_days: number; features: Record<string, boolean | number | string> }): Promise<void>
+    setBusinessStatus(id: string, isActive: boolean, reason: string): Promise<void>
+    setUserStatus(id: string, isActive: boolean, reason: string): Promise<void>
+    grantPlan(businessId: string, planId: string, durationDays: number | undefined, reason: string): Promise<void>
+  }
 }

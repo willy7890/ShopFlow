@@ -1,5 +1,5 @@
 import { NavLink, Outlet, Navigate, useLocation } from 'react-router-dom'
-import { LayoutDashboard, ShoppingCart, Package, Tags, Boxes, Truck, Receipt, FileText, Users, Store, Wallet, HandCoins, BookOpen, BarChart3, Sparkles, UserCog, Building2, CreditCard, Settings, Menu, Sun, Moon, LogOut, Wifi, WifiOff, PanelLeft } from 'lucide-react'
+import { LayoutDashboard, ShoppingCart, Package, Tags, Boxes, Truck, Receipt, FileText, Users, Store, Wallet, HandCoins, BookOpen, BarChart3, Sparkles, UserCog, Building2, CreditCard, Settings, Menu, Sun, Moon, LogOut, Wifi, WifiOff, PanelLeft, ShieldCheck } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useAuth } from '@/store/auth'
 import { useUi } from '@/store/ui'
@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 import { useOffline, useSync } from '@/offline/sync'
 import { Toast } from './ui'
 
-interface Item { id: string; path: string; icon: LucideIcon; perm: string; feature?: string; inventoryOnly?: boolean }
+interface Item { id: string; path: string; icon: LucideIcon; perm: string; feature?: string; inventoryOnly?: boolean; superAdminOnly?: boolean }
 export const NAV: Item[] = [
   { id: 'dash', path: '/', icon: LayoutDashboard, perm: 'dash' },
   { id: 'pos', path: '/pos', icon: ShoppingCart, perm: 'pos' },
@@ -29,12 +29,15 @@ export const NAV: Item[] = [
   { id: 'stores', path: '/stores', icon: Building2, perm: 'stores', feature: 'multistore' },
   { id: 'subscription', path: '/subscription', icon: CreditCard, perm: 'subscription' },
   { id: 'settings', path: '/settings', icon: Settings, perm: 'settings' },
+  { id: 'platformAdmin', path: '/platform-admin', icon: ShieldCheck, perm: '', superAdminOnly: true },
 ]
 /** Visibility rules: backend permissions + backend entitlements + operating mode. (The API enforces the same rules.) */
 export function useVisibleNav() {
   const { me, can, feature } = useAuth()
   const quick = me?.business?.mode === 'quick'
-  return NAV.filter((n) => can(n.perm) && !(quick && n.inventoryOnly) && (!n.feature || feature(n.feature)))
+  return NAV.filter((n) => n.superAdminOnly
+    ? !!me?.user.isSuperAdmin
+    : can(n.perm) && !(quick && n.inventoryOnly) && (!n.feature || feature(n.feature)))
 }
 export const useRouteAllowed = (path: string) => useVisibleNav().some((n) => (n.path === '/' ? path === '/' : path.startsWith(n.path))) || ['/sync'].includes(path)
 

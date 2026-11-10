@@ -3,7 +3,7 @@ import type { Api, Report } from './api'
 import type * as T from './types'
 import { useAuth } from '@/store/auth'
 
-type BackendUser = { id: string; full_name: string; email: string; phone?: string | null }
+type BackendUser = { id: string; full_name: string; email: string; phone?: string | null; is_super_admin?: boolean }
 type BackendEmployee = {
   id: string
   full_name: string
@@ -142,7 +142,7 @@ async function loadMe(token: string, user: BackendUser, preferredBusinessId?: st
   const access = accesses.find((item) => item.business_id === preferredBusinessId) ?? accesses[0]
   if (!access) {
     return {
-      user: { id: user.id, name: user.full_name, email: user.email, role: 'owner', permissions: [], businessPermissions: [] },
+      user: { id: user.id, name: user.full_name, email: user.email, role: 'owner', permissions: [], businessPermissions: [], isSuperAdmin: user.is_super_admin ?? false },
       business: null,
       stores: [],
       entitlements: mapEntitlements(),
@@ -161,6 +161,7 @@ async function loadMe(token: string, user: BackendUser, preferredBusinessId?: st
       role: apiRole(access.role),
       permissions: uiPermissions(apiRole(access.role), access.permissions),
       businessPermissions: access.permissions,
+      isSuperAdmin: user.is_super_admin ?? false,
     },
     business: {
       id: access.business_id,
@@ -589,5 +590,18 @@ export const httpApi: Api = {
       })
     },
     setPlan: async () => { throw new Error('Plan changes are not available through this adapter yet.') },
+  },
+  platformAdmin: {
+    analytics: () => g<T.PlatformAnalytics>('/subscriptions/admin/analytics'),
+    businesses: () => g<T.AdminBusiness[]>('/subscriptions/admin/businesses', { offset: 0, limit: 100 }),
+    users: () => g<T.PlatformUser[]>('/subscriptions/admin/users', { offset: 0, limit: 100 }),
+    plans: () => g<T.AdminPlan[]>('/subscriptions/plans', { active_only: false }),
+    audit: () => g<T.PlatformAudit[]>('/subscriptions/admin/audit-logs', { offset: 0, limit: 100 }),
+    createPlan: async (input) => { await p('/subscriptions/admin/plans', { ...input, is_active: true }) },
+    setBusinessStatus: async (id, is_active, reason) => { await u(`/subscriptions/admin/businesses/${id}/status`, { is_active, reason }) },
+    setUserStatus: async (id, is_active, reason) => { await u(`/subscriptions/admin/users/${id}/status`, { is_active, reason }) },
+    grantPlan: async (businessId, plan_id, duration_days, reason) => {
+      await p(`/subscriptions/admin/businesses/${businessId}/grant`, { plan_id, duration_days, reason })
+    },
   },
 }

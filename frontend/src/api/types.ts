@@ -1,7 +1,7 @@
 export type Role = 'owner' | 'manager' | 'storemgr' | 'cashier' | 'accountant' | 'invmgr'
 export type Method = 'cash' | 'mm' | 'bank' | 'credit'
 export type SyncState = 'pending' | 'synced' | 'failed' | 'conflict'
-export interface User { id: string; name: string; email: string; role: Role; permissions: string[]; businessPermissions?: string[] }
+export interface User { id: string; name: string; email: string; role: Role; permissions: string[]; businessPermissions?: string[]; isSuperAdmin: boolean }
 export interface Business { id: string; name: string; mode: 'pos' | 'quick'; currency: string; timezone: string; type?: string; phone?: string; address?: string; region?: string }
 export interface Store { id: string; name: string }
 export interface Entitlements { plan: 'pro' | 'book'; status: string; renew: string; features: Record<string, boolean>; limits: { stores: number; employees: number } }
@@ -22,6 +22,11 @@ export interface Purchase { no: string; date: string; supplier: string; lines: {
 export interface PurchasePayload { supplier: string; lines: { variantId: number; qty: number; cost: number }[]; paid: number }
 export interface Expense { id: number; date: string; category: string; amount: number; method: Method; store: string; description: string; receipt?: string; edited?: boolean }
 export interface Employee { id: string; name: string; email: string; role: Role; stores: string[]; permissions: string[]; status: 'active' | 'inactive' | 'invited' }
+export interface AdminPlan { id: string; slug: string; name: string; price: string; currency: string; duration_days: number; features: Record<string, boolean | number | string>; is_active: boolean }
+export interface AdminBusiness { id: string; name: string; business_type: string; currency: string; is_active: boolean; subscription: { plan_id: string | null; status: string; expires_at: string | null } | null }
+export interface PlatformUser { id: string; full_name: string; email: string; phone: string | null; is_active: boolean; is_super_admin: boolean; created_at: string }
+export interface PlatformAnalytics { business_count: number; active_business_count: number; user_count: number; active_subscription_count: number; pending_subscription_count: number; confirmed_subscription_revenue: string | null; currency: string | null }
+export interface PlatformAudit { id: string; business_id: string | null; user_id: string | null; event_type: string; details: Record<string, unknown>; created_at: string }
 export interface AiAnswer { text: string; cards: { title: string; value: string }[]; recommendation: boolean; context: string }
 export interface CashEntry { date: string; type: 'open' | 'sale' | 'collect' | 'expense' | 'refund' | 'purchase' | 'spay'; ref: string; method: string; in: number; out: number; balance: number }
 export interface Dashboard { sales: number; received: number; debt: number; expenses: number; grossProfit: number | null; netProfit: number; recent: Sale[]; top: { name: string; qty: number }[]; low: { name: string; stock: number }[]; byStore: { store: string; sales: number }[]; series: { label: string; value: number }[] }

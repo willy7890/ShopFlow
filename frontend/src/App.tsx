@@ -30,6 +30,7 @@ const router = createBrowserRouter([
       { path: 'employees', element: L(() => import('@/features/admin/Employees')) },
       { path: 'stores', element: L(() => import('@/features/admin/Stores')) },
       { path: 'subscription', element: L(() => import('@/features/admin/Subscription')) },
+      { path: 'platform-admin', element: L(() => import('@/features/admin/PlatformAdmin')) },
       { path: 'settings', element: L(() => import('@/features/admin/Settings')) },
       { path: 'sync', element: L(() => import('@/features/admin/SyncPage')) },
     ],
