@@ -4,7 +4,7 @@ Last updated: 2026-11-10
 
 ## Current phase
 
-The Expo/React Native app covers local business setup, catalog/inventory, POS, customer/supplier accounts, cashbook/reports, assistant/analytics and camera barcode scanning. It also supports online authentication, remote catalog/stock download and outbox sync for selected transaction types. Local SQLite remains the operational source of truth; integration is partial, not full backend parity. The backend implements priorities 1–9; Vodacom Tanzania mobile-money processing remains disabled pending the official provider contract. The Vite frontend remains available in parallel. This is not a claim that the complete product specification or an Android release is done.
+The Expo/React Native app covers local business setup, catalog/inventory, POS, customer/supplier accounts, cashbook/reports, assistant/analytics and camera barcode scanning. It also supports online authentication, remote catalog/stock download and outbox sync for selected transaction types. Local SQLite remains the operational source of truth; integration is partial, not full backend parity. The Vite frontend includes business employee permission assignment and a Super Admin platform dashboard backed by the subscription administration APIs. The backend implements priorities 1–9; Vodacom Tanzania mobile-money processing remains disabled pending the official provider contract. This is not a claim that the complete product specification or an Android release is done.
 
 ## Mobile/backend integration — in progress
 

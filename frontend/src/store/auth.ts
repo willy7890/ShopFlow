@@ -45,7 +45,7 @@ export const useAuth = create<AuthState>()(
   persist(
     (set, get) => ({
       token: null, me: null, expired: false, storeId: 'all',
-      setSession: (token, me) => set({ token, me, expired: false }),
+      setSession: (token, me) => set({ token, me, storeId: 'all', expired: false }),
       setMe: (me) => set({ me }),
       setStore: (storeId) => set({ storeId }),
       logout: () => set({ token: null, me: null, expired: false }),

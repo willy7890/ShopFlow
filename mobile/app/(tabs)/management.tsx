@@ -350,7 +350,7 @@ export default function ManagementScreen() {
         label={t('reports.open')}
         secondary
         disabled={!allowedPermissions.includes('view_reports')}
-        onPress={() => router.push('/(tabs)/reports')}
+        onPress={() => router.push('/reports')}
       />
       {!allowedPermissions.includes('view_reports') ? (
         <Text style={styles.muted}>{t('reports.permissionRequired')}</Text>

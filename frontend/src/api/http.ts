@@ -310,11 +310,12 @@ function dashboardRange(period: string) {
 }
 
 async function fetchReport(from: string, to: string, group: 'day' | 'week' | 'month' | 'year'): Promise<Report> {
-  const { storeId } = useAuth.getState()
+  const { storeId, me } = useAuth.getState()
+  const activeStoreId = me?.stores.some((store) => store.id === storeId) ? storeId : 'all'
   const params = {
     start_date: from || undefined,
     end_date: to || undefined,
-    store_id: storeId === 'all' ? undefined : storeId,
+    store_id: activeStoreId === 'all' ? undefined : activeStoreId,
   }
   const [salesReport, profit, expenses, inventory, debtors, sales, best, slow] = await Promise.all([
     g<ReportSales>('/reports/sales', params),
@@ -369,9 +370,10 @@ async function fetchReport(from: string, to: string, group: 'day' | 'week' | 'mo
 
 async function fetchDashboard(period: string, storeId: string): Promise<T.Dashboard> {
   const range = dashboardRange(period)
+  const activeStoreId = useAuth.getState().me?.stores.some((store) => store.id === storeId) ? storeId : 'all'
   const params = {
     ...range,
-    store_id: storeId === 'all' ? undefined : storeId,
+    store_id: activeStoreId === 'all' ? undefined : activeStoreId,
   }
   const [data, sales, expenses] = await Promise.all([
     g<BackendDashboard>('/reports/dashboard', params),
@@ -420,7 +422,8 @@ export const httpApi: Api = {
     me: async () => {
       const { token, me } = useAuth.getState()
       if (!token || !me) throw new Error('Sign in to load your account.')
-      return loadMe(token, { id: me.user.id, full_name: me.user.name, email: me.user.email })
+      const currentUser = await g<BackendUser>('/auth/me')
+      return loadMe(token, currentUser, me.business?.id)
     },
   },
   business: {
@@ -434,7 +437,12 @@ export const httpApi: Api = {
       })
       const { token, me } = useAuth.getState()
       if (!token || !me) throw new Error('Sign in to create a business.')
-      const updatedMe = await loadMe(token, { id: me.user.id, full_name: me.user.name, email: me.user.email }, created.id)
+      const updatedMe = await loadMe(token, {
+        id: me.user.id,
+        full_name: me.user.name,
+        email: me.user.email,
+        is_super_admin: me.user.isSuperAdmin,
+      }, created.id)
       return {
         ...updatedMe,
         business: { ...updatedMe.business!, mode: data.mode, timezone: data.timezone },

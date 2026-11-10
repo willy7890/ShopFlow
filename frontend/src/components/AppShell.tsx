@@ -1,7 +1,9 @@
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet, Navigate, useLocation } from 'react-router-dom'
 import { LayoutDashboard, ShoppingCart, Package, Tags, Boxes, Truck, Receipt, FileText, Users, Store, Wallet, HandCoins, BookOpen, BarChart3, Sparkles, UserCog, Building2, CreditCard, Settings, Menu, Sun, Moon, LogOut, Wifi, WifiOff, PanelLeft, ShieldCheck } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useAuth } from '@/store/auth'
+import { api } from '@/api'
 import { useUi } from '@/store/ui'
 import { useT } from '@/i18n'
 import { cn } from '@/lib/utils'
@@ -34,6 +36,7 @@ export const NAV: Item[] = [
 /** Visibility rules: backend permissions + backend entitlements + operating mode. (The API enforces the same rules.) */
 export function useVisibleNav() {
   const { me, can, feature } = useAuth()
+  if (me?.user.isSuperAdmin && !me.business) return NAV.filter((item) => item.superAdminOnly)
   const quick = me?.business?.mode === 'quick'
   return NAV.filter((n) => n.superAdminOnly
     ? !!me?.user.isSuperAdmin
@@ -42,16 +45,38 @@ export function useVisibleNav() {
 export const useRouteAllowed = (path: string) => useVisibleNav().some((n) => (n.path === '/' ? path === '/' : path.startsWith(n.path))) || ['/sync'].includes(path)
 
 export default function AppShell() {
-  const { me, token, logout, storeId, setStore } = useAuth()
+  const { me, token, logout, storeId, setStore, setMe } = useAuth()
+  const [profileError, setProfileError] = useState('')
   const { t, lang } = useT()
   const ui = useUi()
   const nav = useVisibleNav()
   const loc = useLocation()
+  const isSuperAdmin = me?.user.isSuperAdmin ?? false
   const offline = useOffline()
   const pending = useSync((s) => s.items.filter((i) => i.state !== 'synced').length)
   const syncing = useSync((s) => s.syncing)
+  useEffect(() => {
+    let active = true
+    if (token) {
+      void api.auth.me().then((profile) => {
+        if (active) {
+          setMe(profile)
+          setProfileError('')
+        }
+      }).catch((reason: unknown) => {
+        if (active) setProfileError(reason instanceof Error ? reason.message : String(reason))
+      })
+    }
+    return () => { active = false }
+  }, [setMe, token])
+  useEffect(() => {
+    if (me && storeId !== 'all' && !me.stores.some((store) => store.id === storeId)) {
+      setStore('all')
+    }
+  }, [me, setStore, storeId])
   if (!token || !me) return <Navigate to="/login" replace />
-  if (!me.business) return <Navigate to="/onboarding" replace />
+  if (!me.business && !isSuperAdmin) return <Navigate to="/onboarding" replace />
+  if (isSuperAdmin && loc.pathname === '/') return <Navigate to="/platform-admin" replace />
   const dark = ui.theme === 'dark' || (ui.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)
   const names = t('nav') as Record<string, string>
   const allowed = nav.some((n) => (n.path === '/' ? loc.pathname === '/' : loc.pathname.startsWith(n.path))) || loc.pathname.startsWith('/sync')
@@ -71,10 +96,17 @@ export default function AppShell() {
         <header className="sticky top-0 z-10 bg-sf border-b border-bd px-3 md:px-5 py-2 flex flex-wrap items-center gap-2">
           <button className="btn btn-ghost md:hidden !min-h-[38px] !px-2" aria-label="Menu" onClick={() => ui.setMenu(!ui.menuOpen)}><Menu size={18} /></button>
           <button className="btn btn-ghost hidden md:inline-flex !min-h-[38px] !px-2" aria-label="Collapse" onClick={ui.toggleCollapsed}><PanelLeft size={18} /></button>
-          <b className="truncate max-w-[180px]">{me.business.name}</b>
-          <select aria-label={t('store')} className="inp !w-auto !min-h-[38px] !py-1" value={storeId} onChange={(e) => setStore(e.target.value)}>
-            <option value="all">{t('allst')}</option>{me.stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
+          <b className="truncate max-w-[180px]">{me.business?.name ?? t('platformAdmin')}</b>
+          {me.business ? (
+            <select
+              aria-label={t('store')}
+              className="inp !w-auto !min-h-[38px] !py-1"
+              value={me.stores.some((store) => store.id === storeId) || storeId === 'all' ? storeId : 'all'}
+              onChange={(e) => setStore(e.target.value)}
+            >
+              <option value="all">{t('allst')}</option>{me.stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          ) : null}
           <span className="flex-1" />
           <NavLink to="/sync" className={cn('rounded-full border px-3 min-h-[36px] inline-flex items-center gap-1.5 text-sm font-semibold', offline ? 'border-er text-er' : 'border-bd text-ok')}>
             {offline ? <WifiOff size={15} /> : <Wifi size={15} />}{syncing ? t('o_sync') : t(offline ? 'o_off' : 'o_on')}{pending > 0 && ` · ${pending}`}
@@ -86,6 +118,7 @@ export default function AppShell() {
           <button className="btn btn-ghost !min-h-[36px] !px-2" aria-label={t('logout')} onClick={logout}><LogOut size={16} /></button>
         </header>
         <main className="p-4 md:p-6 pb-24 md:pb-6 max-w-[1200px]">
+          {profileError && <p role="alert" className="text-er text-sm mb-3">{profileError}</p>}
           {allowed ? <Outlet /> : <div><h1 className="text-2xl font-bold mb-2">{t('forbid')}</h1><p className="text-mu">{t('sb_lock')}</p></div>}
         </main>
       </div>

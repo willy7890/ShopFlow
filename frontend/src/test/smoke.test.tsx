@@ -84,4 +84,13 @@ describe('key flows', () => {
     })
     cleanup()
   })
+  it('platform admin dashboard loads only for a super admin', async () => {
+    const session = await mockApi.auth.login('owner@example.com', 'password1')
+    useAuth.getState().setMe({ ...session.me, user: { ...session.me.user, isSuperAdmin: true } })
+    const { default: PlatformAdmin } = await import('../features/admin/PlatformAdmin')
+    mount(PlatformAdmin)
+    await screen.findByText('Dashibodi ya Msimamizi Mkuu')
+    cleanup()
+    useAuth.getState().setMe(session.me)
+  })
 })

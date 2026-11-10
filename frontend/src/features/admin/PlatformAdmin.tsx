@@ -8,6 +8,7 @@ import { Field, Kpis, PageHeader, Panel, QueryState, SelectField, Table, useNoti
 export default function PlatformAdmin() {
   const { t } = useT()
   const isSuperAdmin = useAuth((state) => state.me?.user.isSuperAdmin ?? false)
+  const currentUserId = useAuth((state) => state.me?.user.id)
   const queryClient = useQueryClient()
   const notify = useNotify()
   const [reason, setReason] = useState('')
@@ -33,15 +34,14 @@ export default function PlatformAdmin() {
   }
   const createPlanMutation = useMutation({
     mutationFn: async () => {
-      const features: unknown = JSON.parse(planFeatures)
-      if (!features || typeof features !== 'object' || Array.isArray(features)) throw new Error(t('sa_validation'))
+      const features = parseFeatures(planFeatures)
       await api.platformAdmin.createPlan({
         slug: planSlug.trim().toLowerCase(),
         name: planName.trim(),
         price: planPrice,
         currency: planCurrency.trim().toUpperCase(),
         duration_days: Number(planDays),
-        features: features as Record<string, boolean | number | string>,
+        features,
       })
     },
     onSuccess: async () => {
@@ -111,7 +111,7 @@ export default function PlatformAdmin() {
         </Panel>
       )}
 
-      <Panel title={t('sa_reason')}>
+      <Panel>
         <Field label={t('sa_reason')} value={reason} onChange={(event) => setReason(event.target.value)} />
         {error && <p role="alert" className="text-er text-sm mb-3">{error}</p>}
       </Panel>
@@ -133,7 +133,7 @@ export default function PlatformAdmin() {
             </div>
             <button
               className="btn"
-              disabled={createPlanMutation.isPending || !reasonValid || !planSlug.trim() || !planName.trim() || !planPrice || !planDays}
+              disabled={createPlanMutation.isPending || !planSlug.trim() || !planName.trim() || !planPrice || !planDays}
               onClick={() => createPlanMutation.mutate()}
             >
               {createPlanMutation.isPending ? t('wait') : t('sa_create_plan')}
@@ -213,7 +213,7 @@ export default function PlatformAdmin() {
                 <td className="td">
                   <button
                     className="lnk"
-                    disabled={!reasonValid || setUserStatus.isPending || (user.is_super_admin && user.id === useAuth.getState().me?.user.id)}
+                    disabled={!reasonValid || setUserStatus.isPending || (user.is_super_admin && user.id === currentUserId)}
                     onClick={() => setUserStatus.mutate({ id: user.id, isActive: !user.is_active })}
                   >
                     {t(user.is_active ? 'sa_deactivate' : 'sa_activate')}
@@ -240,4 +240,25 @@ export default function PlatformAdmin() {
       </Panel>
     </>
   )
+}
+
+function parseFeatures(value: string): Record<string, boolean | number | string> {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value)
+  } catch {
+    throw new Error('Features must be valid JSON.')
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('Features must be a JSON object.')
+  }
+  const entries = Object.entries(parsed)
+  if (entries.some(([, feature]) => (
+    typeof feature !== 'boolean'
+    && typeof feature !== 'number'
+    && typeof feature !== 'string'
+  ) || (typeof feature === 'number' && !Number.isFinite(feature)))) {
+    throw new Error('Feature values must be text, numbers, or true/false.')
+  }
+  return Object.fromEntries(entries) as Record<string, boolean | number | string>
 }

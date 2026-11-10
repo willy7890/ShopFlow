@@ -166,6 +166,23 @@ Authenticated business users:
 
 The configured Super Admin must first register with the email in `SUPER_ADMIN_EMAIL`, then bootstrap with their authenticated account and `X-Super-Admin-Bootstrap-Secret`. Registration by itself never grants platform-admin privileges.
 
+For local setup, put the chosen account email and a fresh random secret in `backend/.env`, then restart the API:
+
+```sh
+cd backend
+python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
+```
+
+Copy the generated value into `SUPER_ADMIN_BOOTSTRAP_SECRET` and set `SUPER_ADMIN_EMAIL` to the exact registered email. Log in as that account to obtain an access token, then run:
+
+```sh
+curl -X POST http://localhost:8000/api/v1/subscriptions/admin/bootstrap \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -H "X-Super-Admin-Bootstrap-Secret: <SUPER_ADMIN_BOOTSTRAP_SECRET>"
+```
+
+The secret is a bootstrap credential; keep it private and do not commit it. The web session must sign in again after bootstrap so its Super Admin menu refreshes.
+
 Super Admin endpoints:
 
 - `POST /api/v1/subscriptions/admin/bootstrap`
