@@ -1,7 +1,7 @@
 export type Role = 'owner' | 'manager' | 'storemgr' | 'cashier' | 'accountant' | 'invmgr'
 export type Method = 'cash' | 'mm' | 'bank' | 'credit'
 export type SyncState = 'pending' | 'synced' | 'failed' | 'conflict'
-export interface User { id: string; name: string; email: string; role: Role; permissions: string[] }
+export interface User { id: string; name: string; email: string; role: Role; permissions: string[]; businessPermissions?: string[] }
 export interface Business { id: string; name: string; mode: 'pos' | 'quick'; currency: string; timezone: string; type?: string; phone?: string; address?: string; region?: string }
 export interface Store { id: string; name: string }
 export interface Entitlements { plan: 'pro' | 'book'; status: string; renew: string; features: Record<string, boolean>; limits: { stores: number; employees: number } }
@@ -21,7 +21,7 @@ export interface SalePayload { clientId: string; type: 'pos' | 'quick'; customer
 export interface Purchase { no: string; date: string; supplier: string; lines: { variantId: string | number; name: string; qty: number; cost: number }[]; total: number; paid: number }
 export interface PurchasePayload { supplier: string; lines: { variantId: number; qty: number; cost: number }[]; paid: number }
 export interface Expense { id: number; date: string; category: string; amount: number; method: Method; store: string; description: string; receipt?: string; edited?: boolean }
-export interface Employee { id: string; name: string; email: string; role: Role; stores: string[]; status: 'active' | 'inactive' | 'invited' }
+export interface Employee { id: string; name: string; email: string; role: Role; stores: string[]; permissions: string[]; status: 'active' | 'inactive' | 'invited' }
 export interface AiAnswer { text: string; cards: { title: string; value: string }[]; recommendation: boolean; context: string }
 export interface CashEntry { date: string; type: 'open' | 'sale' | 'collect' | 'expense' | 'refund' | 'purchase' | 'spay'; ref: string; method: string; in: number; out: number; balance: number }
 export interface Dashboard { sales: number; received: number; debt: number; expenses: number; grossProfit: number | null; netProfit: number; recent: Sale[]; top: { name: string; qty: number }[]; low: { name: string; stock: number }[]; byStore: { store: string; sales: number }[]; series: { label: string; value: number }[] }

@@ -71,4 +71,17 @@ describe('key flows', () => {
     fireEvent.click(await screen.findByText('Nina madeni kiasi gani?'))
     await screen.findByText(/Jumla ya madeni/, {}, { timeout: 4000 }); cleanup()
   })
+  it('employee permissions can be changed and saved', async () => {
+    const { default: Employees } = await import('../features/admin/Employees'); mount(Employees)
+    await screen.findByText('Neema Joseph')
+    fireEvent.click(screen.getAllByText('Ruhusa')[0])
+    await screen.findByText('Toa ruhusa')
+    fireEvent.click(screen.getByLabelText('Simamia mauzo'))
+    fireEvent.click(screen.getByText('Hifadhi ruhusa'))
+    await waitFor(async () => {
+      const employee = (await mockApi.admin.employees()).find((item) => item.email === 'neema@example.com')
+      expect(employee?.permissions).not.toContain('manage_sales')
+    })
+    cleanup()
+  })
 })

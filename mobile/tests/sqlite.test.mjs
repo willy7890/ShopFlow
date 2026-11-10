@@ -23,6 +23,7 @@ import {
   getSaleRefundRequest,
   getSaleDetail,
   getSalesSummary,
+  listSalePayments,
   listRecentSales,
   prepareSaleRefund,
 } from '../src/repositories/sales.ts'
@@ -194,6 +195,13 @@ test('SQLite migrations, offline sale persistence and stock rollback are consist
     assert.equal(sales[0].saleNumber, sale.saleNumber)
     assert.equal(sales[0].itemCount, 1)
     assert.equal((await listRecentSales(database, workspace, 'not found')).length, 0)
+    const salePayments = await listSalePayments(database, workspace)
+    assert.equal(salePayments.length, 1)
+    assert.equal(salePayments[0].saleNumber, sale.saleNumber)
+    assert.equal(salePayments[0].amountMinor, 1000)
+    assert.equal(salePayments[0].method, 'cash')
+    assert.equal(salePayments[0].status, 'confirmed')
+    assert.equal((await listSalePayments(database, workspace, 'not found')).length, 0)
     const saleDetail = await getSaleDetail(database, workspace, sale.saleId)
     assert.equal(saleDetail.totalMinor, 1000)
     assert.equal(saleDetail.paidMinor, 1000)
@@ -268,6 +276,9 @@ test('SQLite migrations, offline sale persistence and stock rollback are consist
     assert.equal(refundedSale.refundMinor, 1000)
     assert.equal(refundedSale.refundStatus, 'refunded')
     assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM sale_refunds')).count, 1)
+    const paymentHistory = await listSalePayments(database, workspace)
+    assert.equal(paymentHistory.length, 2)
+    assert.ok(paymentHistory.some((payment) => payment.method === 'refund' && payment.amountMinor === 1000))
     assert.deepEqual({ ...await getCashbookTotals(database, workspace) }, { incomeMinor: 1000, expenseMinor: 1000 })
     await assert.rejects(
       prepareSaleRefund(database, workspace, { ...refundRequest, idempotencyKey: 'different-refund' }, randomUUID),

@@ -34,6 +34,18 @@ export interface SaleHistoryEntry {
   createdAt: string
   syncState: 'pending' | 'synced' | 'failed' | 'conflict'
   itemCount: number
+  refundMinor: number
+}
+
+export interface SalePaymentHistoryEntry {
+  id: string
+  saleNumber: string
+  customerName: string | null
+  createdAt: string
+  method: 'cash' | 'mobile_money' | 'bank' | 'credit' | 'refund'
+  amountMinor: number
+  status: 'confirmed' | 'pending' | 'failed' | 'credit'
+  reference: string | null
 }
 
 export interface SaleDetail extends SaleHistoryEntry {
@@ -308,7 +320,9 @@ export async function listRecentSales(
     `SELECT sales.id, sales.sale_number AS saleNumber, sales.total_minor AS totalMinor,
        sales.paid_minor AS paidMinor, sales.balance_due_minor AS balanceDueMinor,
        sales.customer_name_snapshot AS customerName, sales.created_at AS createdAt,
-       sales.sync_state AS syncState, COUNT(sale_items.id) AS itemCount
+       sales.sync_state AS syncState, COUNT(sale_items.id) AS itemCount,
+       COALESCE((SELECT amount_minor FROM sale_refunds
+         WHERE sale_refunds.sale_id = sales.id LIMIT 1), 0) AS refundMinor
      FROM sales
      LEFT JOIN sale_items ON sale_items.sale_id = sales.id
      WHERE sales.business_id = ? AND sales.store_id = ?
@@ -324,6 +338,55 @@ export async function listRecentSales(
   )
 }
 
+export async function listSalePayments(
+  database: SQLiteDatabase,
+  workspace: Workspace,
+  search = '',
+): Promise<SalePaymentHistoryEntry[]> {
+  await assertSalesVisibility(database, workspace)
+  const query = search.trim()
+  const payments = await database.getAllAsync<SalePaymentHistoryEntry>(
+    `SELECT payments.id, sales.sale_number AS saleNumber,
+       sales.customer_name_snapshot AS customerName,
+       payments.created_at AS createdAt, payments.method,
+       payments.amount_minor AS amountMinor, payments.status, NULL AS reference
+     FROM payments
+     JOIN sales ON sales.id = payments.sale_id
+     WHERE payments.business_id = ? AND payments.store_id = ?
+       AND (? = '' OR sales.sale_number LIKE ? OR
+         COALESCE(sales.customer_name_snapshot, '') LIKE ?)
+     ORDER BY payments.created_at DESC, payments.rowid DESC`,
+    workspace.businessId,
+    workspace.storeId,
+    query,
+    `%${query}%`,
+    `%${query}%`,
+  )
+  const refunds = await database.getAllAsync<SalePaymentHistoryEntry>(
+    `SELECT 'refund-' || sale_refunds.id AS id,
+       sales.sale_number AS saleNumber,
+       sales.customer_name_snapshot AS customerName,
+       sale_refunds.created_at AS createdAt,
+       'refund' AS method,
+       sale_refunds.amount_minor AS amountMinor,
+       'confirmed' AS status,
+       NULL AS reference
+     FROM sale_refunds
+     JOIN sales ON sales.id = sale_refunds.sale_id
+     WHERE sale_refunds.business_id = ? AND sale_refunds.store_id = ?
+       AND sale_refunds.amount_minor > 0
+       AND (? = '' OR sales.sale_number LIKE ? OR
+         COALESCE(sales.customer_name_snapshot, '') LIKE ?)
+     ORDER BY sale_refunds.created_at DESC, sale_refunds.rowid DESC`,
+    workspace.businessId,
+    workspace.storeId,
+    query,
+    `%${query}%`,
+    `%${query}%`,
+  )
+  return [...payments, ...refunds].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+}
+
 export async function getSaleDetail(
   database: SQLiteDatabase,
   workspace: Workspace,
@@ -336,7 +399,9 @@ export async function getSaleDetail(
        sales.customer_name_snapshot AS customerName, sales.created_at AS createdAt,
        sales.sync_state AS syncState, sales.cash_tendered_minor AS cashTenderedMinor,
        sales.change_minor AS changeMinor,
-       (SELECT COUNT(*) FROM sale_items WHERE sale_id = sales.id) AS itemCount
+       (SELECT COUNT(*) FROM sale_items WHERE sale_id = sales.id) AS itemCount,
+       COALESCE((SELECT amount_minor FROM sale_refunds
+         WHERE sale_refunds.sale_id = sales.id LIMIT 1), 0) AS refundMinor
      FROM sales
      WHERE sales.id = ? AND sales.business_id = ? AND sales.store_id = ?`,
     saleId,

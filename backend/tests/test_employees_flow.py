@@ -115,3 +115,86 @@ def test_employee_management_and_store_access():
         headers=employee_headers,
     )
     assert access_check.status_code == 403, access_check.text
+
+
+def test_employee_permissions_can_be_granted_and_manager_scope_is_limited():
+    owner_token, business_id = _register_owner()
+    owner_headers = {"Authorization": f"Bearer {owner_token}", "X-Business-ID": business_id}
+    stores = client.get(f"/api/v1/businesses/{business_id}/stores", headers=owner_headers)
+    assert stores.status_code == 200, stores.text
+    store_id = stores.json()[0]["id"]
+
+    manager_email = f"manager-{uuid4().hex}@example.com"
+    manager_registration = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Access Manager",
+            "email": manager_email,
+            "password": "StrongPass123!",
+            "business_name": f"Manager Business {uuid4().hex}",
+        },
+    )
+    assert manager_registration.status_code == 201, manager_registration.text
+    manager_token = manager_registration.json()["access_token"]
+    manager_invite = client.post(
+        "/api/v1/employees/invite",
+        json={
+            "email": manager_email,
+            "role": "manager",
+            "store_ids": [store_id],
+            "permissions": ["manage_employees", "manage_sales", "view_reports"],
+        },
+        headers=owner_headers,
+    )
+    assert manager_invite.status_code == 201, manager_invite.text
+    manager_headers = {"Authorization": f"Bearer {manager_token}", "X-Business-ID": business_id}
+
+    employee_email = f"staff-{uuid4().hex}@example.com"
+    employee_registration = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Shop Employee",
+            "email": employee_email,
+            "password": "StrongPass123!",
+            "business_name": f"Staff Business {uuid4().hex}",
+        },
+    )
+    assert employee_registration.status_code == 201, employee_registration.text
+    invited = client.post(
+        "/api/v1/employees/invite",
+        json={
+            "email": employee_email,
+            "role": "cashier",
+            "store_ids": [store_id],
+            "permissions": ["manage_sales"],
+        },
+        headers=owner_headers,
+    )
+    assert invited.status_code == 201, invited.text
+    employee_id = invited.json()["id"]
+
+    denied = client.patch(
+        f"/api/v1/employees/{employee_id}",
+        json={"permissions": ["manage_finance"]},
+        headers=manager_headers,
+    )
+    assert denied.status_code == 403, denied.text
+
+    granted = client.patch(
+        f"/api/v1/employees/{employee_id}",
+        json={"permissions": ["view_reports", "manage_sales"]},
+        headers=manager_headers,
+    )
+    assert granted.status_code == 200, granted.text
+    assert set(granted.json()["permissions"]) == {"view_reports", "manage_sales"}
+
+    deactivated = client.patch(
+        f"/api/v1/employees/{employee_id}",
+        json={"is_active": False},
+        headers=owner_headers,
+    )
+    assert deactivated.status_code == 200, deactivated.text
+    listed = client.get("/api/v1/employees", headers=owner_headers)
+    assert listed.status_code == 200, listed.text
+    inactive = next(item for item in listed.json() if item["id"] == employee_id)
+    assert inactive["is_active"] is False

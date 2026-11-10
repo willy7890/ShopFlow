@@ -69,8 +69,8 @@ let expenses: T.Expense[] = [
   { id: 3, date: '2026-11-03', category: 'electricity', amount: 35000, method: 'mm', store: 's1', description: 'LUKU' },
 ]
 let employees: T.Employee[] = [
-  { id: 'e1', name: 'Neema Joseph', email: 'neema@example.com', role: 'cashier', stores: ['s1'], status: 'active' },
-  { id: 'e2', name: 'Juma Salim', email: 'juma@example.com', role: 'storemgr', stores: ['s1', 's2'], status: 'active' },
+  { id: 'e1', name: 'Neema Joseph', email: 'neema@example.com', role: 'cashier', stores: ['s1'], permissions: ['manage_sales', 'view_dashboard'], status: 'active' },
+  { id: 'e2', name: 'Juma Salim', email: 'juma@example.com', role: 'storemgr', stores: ['s1', 's2'], permissions: ['manage_products', 'manage_inventory', 'manage_sales', 'manage_orders', 'view_reports', 'view_dashboard'], status: 'active' },
 ]
 const seenClient = new Map<string, T.Sale>()   // idempotency for offline retries
 let sn = 148, pn = 31, rn = 0, an = 7
@@ -317,7 +317,7 @@ export const mockApi: Api = {
     async employees() { await lat(); return employees },
     async invite(d) {
       await lat(); if (employees.some((e) => e.email.toLowerCase() === d.email.toLowerCase())) fail('DUPLICATE')
-      if (employees.length >= PLANS[plan].limits.employees) fail('PLAN_LIMIT'); employees.push({ id: 'e' + Date.now(), ...d, status: 'invited' })
+      if (employees.length >= PLANS[plan].limits.employees) fail('PLAN_LIMIT'); employees.push({ id: 'e' + Date.now(), name: d.email, ...d, status: 'invited' })
     },
     async updateEmployee(id, patch) { await lat(); employees = employees.map((e) => (e.id === id ? { ...e, ...patch } : e)) },
     async setPlan(p) { await lat(); plan = p; if (business) business.mode = p === 'book' ? 'quick' : 'pos'; return me() },

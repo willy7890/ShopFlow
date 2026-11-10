@@ -4,6 +4,15 @@ import type * as T from './types'
 import { useAuth } from '@/store/auth'
 
 type BackendUser = { id: string; full_name: string; email: string; phone?: string | null }
+type BackendEmployee = {
+  id: string
+  full_name: string
+  email: string
+  role: string
+  store_access: string[]
+  permissions: string[]
+  is_active: boolean
+}
 type BackendSession = { access_token: string; refresh_token: string; user: BackendUser }
 type BusinessAccess = {
   business_id: string
@@ -81,6 +90,10 @@ const apiRole = (role: string): T.Role => ({
   store_manager: 'storemgr',
   inventory_manager: 'invmgr',
 }[role] as T.Role | undefined) ?? (role as T.Role)
+const backendRole = (role: T.Role): string => ({
+  storemgr: 'store_manager',
+  invmgr: 'inventory_manager',
+} as Partial<Record<T.Role, string>>)[role] ?? role
 const rolePermissions: Record<T.Role, string[]> = {
   owner: ['dash', 'pos', 'catalog', 'inventory', 'purchases', 'sales', 'customers', 'finance', 'reports', 'ai', 'employees', 'stores', 'subscription', 'void', 'discount', 'settings'],
   manager: ['dash', 'pos', 'catalog', 'inventory', 'purchases', 'sales', 'customers', 'finance', 'reports', 'ai', 'employees', 'stores', 'void', 'discount', 'settings'],
@@ -105,10 +118,8 @@ const backendPermissionMap: Record<string, string[]> = {
   manage_sync: ['settings'],
 }
 const uiPermissions = (role: T.Role, granted: string[]) => {
-  if (role === 'owner' || role === 'manager') return rolePermissions[role]
-  return granted.length
-    ? [...new Set(granted.flatMap((permission) => backendPermissionMap[permission] ?? []).concat('settings'))]
-    : rolePermissions[role]
+  if (role === 'owner') return rolePermissions[role]
+  return [...new Set(granted.flatMap((permission) => backendPermissionMap[permission] ?? []).concat('settings'))]
 }
 const mapEntitlements = (data?: BackendEntitlements): T.Entitlements => {
   const features = data?.features ?? data?.plan?.features ?? {}
@@ -131,7 +142,7 @@ async function loadMe(token: string, user: BackendUser, preferredBusinessId?: st
   const access = accesses.find((item) => item.business_id === preferredBusinessId) ?? accesses[0]
   if (!access) {
     return {
-      user: { id: user.id, name: user.full_name, email: user.email, role: 'owner', permissions: [] },
+      user: { id: user.id, name: user.full_name, email: user.email, role: 'owner', permissions: [], businessPermissions: [] },
       business: null,
       stores: [],
       entitlements: mapEntitlements(),
@@ -149,6 +160,7 @@ async function loadMe(token: string, user: BackendUser, preferredBusinessId?: st
       email: user.email,
       role: apiRole(access.role),
       permissions: uiPermissions(apiRole(access.role), access.permissions),
+      businessPermissions: access.permissions,
     },
     business: {
       id: access.business_id,
@@ -551,9 +563,31 @@ export const httpApi: Api = {
   ai: { ask: (question, lang) => p('/assistant/ask', { question, language: lang }) },
   sync: { push: async () => { throw new Error('Offline sync is not available through this adapter yet.') } },
   admin: {
-    employees: () => g('/employees'),
-    invite: async (data) => { await p('/employees/invite', data) },
-    updateEmployee: async (id, patch) => { await u(`/employees/${id}`, patch) },
+    employees: async () => (await g<BackendEmployee[]>('/employees')).map((employee): T.Employee => ({
+      id: employee.id,
+      name: employee.full_name,
+      email: employee.email,
+      role: apiRole(employee.role),
+      stores: employee.store_access,
+      permissions: employee.permissions,
+      status: employee.is_active ? 'active' : 'inactive',
+    })),
+    invite: async (data) => {
+      await p('/employees/invite', {
+        email: data.email,
+        role: backendRole(data.role),
+        store_ids: data.stores,
+        permissions: data.permissions,
+      })
+    },
+    updateEmployee: async (id, patch) => {
+      await u(`/employees/${id}`, {
+        ...(patch.role ? { role: backendRole(patch.role) } : {}),
+        ...(patch.stores ? { store_ids: patch.stores } : {}),
+        ...(patch.permissions ? { permissions: patch.permissions } : {}),
+        ...(patch.status ? { is_active: patch.status === 'active' } : {}),
+      })
+    },
     setPlan: async () => { throw new Error('Plan changes are not available through this adapter yet.') },
   },
 }

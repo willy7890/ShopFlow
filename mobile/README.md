@@ -40,6 +40,7 @@ The APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`. A sig
 - Store-scoped sync queue review shows pending, failed and conflicted changes with error details; failed changes can be retried manually, while conflicts are preserved and never automatically resent.
 - The business assistant uses the authenticated, store-scoped backend provider for online workspaces and the private on-device helper for local workspaces. The backend assistant stays unavailable until an operator configures an OpenAI-compatible provider.
 - Store-scoped sales history with sale details, shareable text receipts and generated/printable PDF invoices; documents include item snapshots, totals, payments, customer, date and change.
+- Sales and payments views with search, date-range presets, payment/sale status filters, totals, and recorded refund entries.
 - Online full-sale refunds for fully paid, synced sales; refunds require a reason and confirmation, use a stable server idempotency key, record a local cashbook expense, and refresh server stock. Partial, credit-sale and offline refunds are not supported.
 - Owner/manager-settings-gated full SQLite backup export and restore through the native file/share pickers; restore validates integrity/schema, asks for destructive confirmation, clears online credentials and returns to sign-in.
 - SQLite schema migrations through v11; existing sales and account-payment history are preserved and reflected in the cashbook during upgrade. Product barcodes are stored per variant to support downloaded catalogs.

@@ -12,6 +12,7 @@ The Expo/React Native app covers local business setup, catalog/inventory, POS, c
 - Added authenticated `GET /api/v1/businesses/access` so mobile can display active business/store assignments and permissions.
 - Added business/store selection, server catalog/store-stock download, authenticated assistant access and idempotent outbox sync for sales, customer/supplier accounts and cashbook entries.
 - Added store-scoped sales history and shareable text receipts.
+- Added native Sales/Payments views with search, date presets, status filters and payment totals.
 - Added online full-sale refunds for fully paid, synced sales, with confirmation, idempotent API retries, local refund records/cashbook expense and server-stock refresh.
 - The mobile build currently supports TZS and whole-number catalog prices/stock only. Product edits and stock adjustments on mobile do not sync; there is no remote-to-mobile transaction pull or conflict-review UI. Mobile data can therefore diverge from web data.
 - Offline authentication continuity, complete cross-device reconciliation, partial/credit/offline mobile refunds and catalog mutation sync remain incomplete. The backend refund endpoint records idempotency keys and prevents cumulative item over-returns. Review sync failures and server stock before using mobile as the only point of sale.

@@ -58,6 +58,22 @@ def _normalize_permissions(values: list[str] | None) -> list[str]:
     return sorted(normalized)
 
 
+def _validate_assignment_scope(
+    actor: Membership,
+    role: str,
+    store_ids: list[str],
+    permissions: list[str],
+) -> None:
+    if actor.role == "owner":
+        return
+    if role == "owner":
+        raise HTTPException(status_code=403, detail="Only the business owner can assign the owner role.")
+    if not set(store_ids).issubset(actor.store_access or []):
+        raise HTTPException(status_code=403, detail="You cannot assign stores outside your own access.")
+    if not set(permissions).issubset(actor.permissions or []):
+        raise HTTPException(status_code=403, detail="You cannot grant permissions you do not have.")
+
+
 @router.get("", response_model=list[EmployeeOut])
 def list_employees(
     membership: Membership = Depends(get_business_membership),
@@ -67,7 +83,7 @@ def list_employees(
         raise HTTPException(status_code=403, detail="You do not have permission to manage employees")
     query = (
         db.query(Membership)
-        .filter(Membership.business_id == membership.business_id, Membership.is_active.is_(True))
+        .filter(Membership.business_id == membership.business_id)
         .order_by(Membership.created_at.asc())
     )
     employees = []
@@ -142,7 +158,10 @@ def invite_employee(
             ]
         else:
             store_ids = list(membership.store_access or [])
-    permissions = _normalize_permissions(payload.permissions or DEFAULT_ROLE_PERMISSIONS.get(payload.role, []))
+    permissions = _normalize_permissions(
+        payload.permissions if payload.permissions is not None else DEFAULT_ROLE_PERMISSIONS.get(payload.role, [])
+    )
+    _validate_assignment_scope(membership, payload.role, store_ids, permissions)
     user = db.query(User).filter(User.email == payload.email).first()
     if not user:
         raise HTTPException(status_code=404, detail="User must register before being assigned to this business")
@@ -152,6 +171,9 @@ def invite_employee(
         .first()
     )
     if existing_membership:
+        if membership.role != "owner" and existing_membership.role == "owner":
+            raise HTTPException(status_code=403, detail="Only the business owner can change owner access.")
+        _validate_assignment_scope(membership, payload.role, store_ids, permissions)
         if not existing_membership.is_active:
             existing_membership.is_active = True
         existing_membership.role = payload.role
@@ -200,8 +222,24 @@ def update_employee(
     )
     if not employee_membership:
         raise HTTPException(status_code=404, detail="Employee not found")
+    if membership.role != "owner" and employee_membership.role == "owner":
+        raise HTTPException(status_code=403, detail="Only the business owner can change owner access.")
     if employee_membership.user_id == membership.user_id and membership.role != "owner":
         raise HTTPException(status_code=403, detail="You cannot change your own role while using a manager role")
+    next_role = payload.role or employee_membership.role
+    next_permissions = (
+        _normalize_permissions(payload.permissions)
+        if payload.permissions is not None
+        else _normalize_permissions(DEFAULT_ROLE_PERMISSIONS.get(next_role, []))
+        if payload.role is not None
+        else list(employee_membership.permissions or [])
+    )
+    next_store_ids = (
+        _validate_store_ids(db, membership.business_id, payload.store_ids)
+        if payload.store_ids is not None
+        else list(employee_membership.store_access or [])
+    )
+    _validate_assignment_scope(membership, next_role, next_store_ids, next_permissions)
     if payload.role is not None:
         if payload.role not in ALLOWED_EMPLOYEE_ROLES:
             raise HTTPException(status_code=400, detail="Unsupported employee role")
@@ -209,7 +247,7 @@ def update_employee(
         if payload.permissions is None:
             employee_membership.permissions = _normalize_permissions(DEFAULT_ROLE_PERMISSIONS.get(payload.role, []))
     if payload.store_ids is not None:
-        employee_membership.store_access = _validate_store_ids(db, membership.business_id, payload.store_ids)
+        employee_membership.store_access = next_store_ids
     if payload.permissions is not None:
         employee_membership.permissions = _normalize_permissions(payload.permissions)
     if payload.is_active is not None:

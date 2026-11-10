@@ -32,7 +32,7 @@ class EmployeeInvite(BaseModel):
     email: EmailStr
     role: Literal["owner", "manager", "store_manager", "cashier", "accountant", "inventory_manager"] = "cashier"
     store_ids: list[str] = Field(default_factory=list)
-    permissions: list[str] = Field(default_factory=list)
+    permissions: list[str] | None = None
     is_active: bool = True
 
 

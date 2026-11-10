@@ -50,7 +50,7 @@ export interface Api {
   ai: { ask(question: string, lang: 'sw' | 'en'): Promise<T.AiAnswer> }
   sync: { push(items: T.SalePayload[]): Promise<T.SyncResult[]> }
   admin: {
-    employees(): Promise<T.Employee[]>; invite(d: { name: string; email: string; role: T.Role; stores: string[] }): Promise<void>
+    employees(): Promise<T.Employee[]>; invite(d: { email: string; role: T.Role; stores: string[]; permissions: string[] }): Promise<void>
     updateEmployee(id: string, patch: Partial<T.Employee>): Promise<void>; setPlan(plan: 'pro' | 'book'): Promise<T.Me>
   }
 }
