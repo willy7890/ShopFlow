@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     M_PESA_CONSUMER_KEY: str = ""
     M_PESA_CONSUMER_SECRET: str = ""
     M_PESA_PUBLIC_KEY: str = ""
+    AI_API_BASE_URL: str = ""
+    AI_API_KEY: str = ""
+    AI_MODEL: str = ""
+    AI_TIMEOUT_SECONDS: int = 20
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

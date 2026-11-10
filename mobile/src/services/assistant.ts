@@ -4,6 +4,25 @@ import type { Workspace } from '../repositories/workspace.ts'
 import { getLocalInsights } from './insights.ts'
 import { formatTzs } from '../domain/money.ts'
 import type { Language } from '../i18n/translations.ts'
+import { authenticatedApiRequest } from './api.ts'
+
+export async function askOnlineBusinessAssistant(
+  database: SQLiteDatabase,
+  workspace: Workspace,
+  question: string,
+  language: Language,
+): Promise<string> {
+  const result = await authenticatedApiRequest<{ answer: string }>(
+    database,
+    '/assistant/ask',
+    {
+      method: 'POST',
+      body: JSON.stringify({ question, language }),
+    },
+    { businessId: workspace.businessId, storeId: workspace.storeId },
+  )
+  return result.answer
+}
 
 export async function answerBusinessQuestion(
   database: SQLiteDatabase,

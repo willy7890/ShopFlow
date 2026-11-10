@@ -5,7 +5,7 @@ import { useCallback } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
 import { Button, Card, Field, LoadingState, PageTitle, Screen } from '@/src/components/NativeUi'
 import { getActiveWorkspace, type Workspace } from '@/src/repositories/workspace'
-import { answerBusinessQuestion } from '@/src/services/assistant'
+import { answerBusinessQuestion, askOnlineBusinessAssistant } from '@/src/services/assistant'
 import { useI18n } from '@/src/i18n/I18nProvider'
 import { useTheme, type ThemeColors } from '@/src/theme/colors'
 
@@ -45,7 +45,12 @@ export default function AssistantScreen() {
     setBusy(true)
     setError(null)
     try {
-      const answer = await answerBusinessQuestion(database, workspace, prompt, language)
+      const activeContext = await database.getFirstAsync<{ setting_value: string }>(
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'active_context'",
+      )
+      const answer = activeContext?.setting_value === 'online'
+        ? await askOnlineBusinessAssistant(database, workspace, prompt, language)
+        : await answerBusinessQuestion(database, workspace, prompt, language)
       setMessages((current) => [...current, { id: Date.now(), question: prompt, answer }])
       setQuestion('')
     } catch (reason) {

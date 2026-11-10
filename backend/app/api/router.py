@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from app.modules.auth.router import router as auth_router
+from app.modules.assistant.router import router as assistant_router
 from app.modules.businesses.router import router as businesses_router
 from app.modules.catalog.router import router as catalog_router
 from app.modules.customers.router import router as customers_router
@@ -14,6 +15,7 @@ from app.modules.subscriptions.router import router as subscriptions_router
 
 api_router = APIRouter()
 api_router.include_router(auth_router, prefix="/auth", tags=["authentication"])
+api_router.include_router(assistant_router, prefix="/assistant", tags=["business assistant"])
 api_router.include_router(businesses_router, prefix="/businesses", tags=["businesses and stores"])
 api_router.include_router(catalog_router, prefix="/catalog", tags=["catalog"])
 api_router.include_router(customers_router, prefix="/customers", tags=["customers and debtors"])

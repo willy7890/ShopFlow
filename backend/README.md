@@ -9,6 +9,7 @@ This version includes the Phase 1–2 foundation, Phase 3–4 catalog and invent
 - Categories with parent categories, brands, units and conversion factors
 - Products and variants with SKU, barcode, prices and stock threshold
 - Barcode lookup scoped to the active business
+- Authenticated, store-scoped AI business assistant (requires an operator-configured OpenAI-compatible provider)
 - Suppliers
 - Draft purchases and explicit receive action
 - Inventory balances, stock movement ledger and weighted-average cost on receiving stock
@@ -55,5 +56,8 @@ A purchase starts as `draft`; stock is not increased until the explicit receive 
 ## Development database note
 SQLite is the default for local development. For PostgreSQL, set `DATABASE_URL` in `.env` to a `postgresql+psycopg://...` URL. `create_all` is only a development convenience; production schema changes should use Alembic migrations, which will be added before production deployment.
 
+## Business assistant provider
+The assistant is disabled unless `AI_API_BASE_URL`, `AI_API_KEY`, and `AI_MODEL` are configured on the backend. The backend sends the question and a small set of store-scoped aggregate sales, cashbook, and low-stock facts to that OpenAI-compatible endpoint. Do not configure a provider unless the business has approved this data transfer. The API key remains on the server and is never returned to mobile clients. Requests are limited by `AI_TIMEOUT_SECONDS`; an unavailable or unconfigured provider returns an explicit API error rather than an invented answer.
+
 ## Not yet implemented
-POS sales, quick sales, invoices, refunds, expenses, debts, cashbook, AI engine, offline sync, payment provider callbacks, subscriptions and full audit event pipeline are subsequent phases. This version should not be represented as the complete production system.
+Quick sales, invoices, payment provider callbacks, subscriptions and the full audit event pipeline are subsequent phases. The AI assistant additionally requires an operator-configured provider. This version should not be represented as the complete production system.

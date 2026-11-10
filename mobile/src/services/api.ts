@@ -145,10 +145,11 @@ export async function authenticatedApiRequest<T>(
   database: SQLiteDatabase,
   path: string,
   init: RequestInit = {},
-  context?: { businessId?: string; deviceId?: string },
+  context?: { businessId?: string; storeId?: string; deviceId?: string },
 ): Promise<T> {
   const headers = new Headers(init.headers)
   if (context?.businessId) headers.set('X-Business-ID', context.businessId)
+  if (context?.storeId) headers.set('X-Store-ID', context.storeId)
   if (context?.deviceId) headers.set('X-Device-ID', context.deviceId)
   return request<T>(database, path, { ...init, headers })
 }
