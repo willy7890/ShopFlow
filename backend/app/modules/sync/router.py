@@ -415,7 +415,7 @@ def push_sync_items(
             )
             .first()
         )
-        if duplicate and duplicate.status != "failed":
+        if duplicate and duplicate.status in {"synced", "conflict"}:
             results.append(SyncPushResult(client_id=client_id, state=duplicate.status, message=duplicate.result_message or duplicate.error_message))
             continue
 
