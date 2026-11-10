@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import * as Crypto from 'expo-crypto'
 import { useFocusEffect } from 'expo-router'
 import { useSQLiteContext } from 'expo-sqlite'
@@ -9,11 +9,14 @@ import {
   createCustomer,
   createSupplier,
   listCustomers,
+  listCustomerLedgerEntries,
   listSuppliers,
+  listSupplierLedgerEntries,
   recordCustomerPayment,
   recordSupplierBill,
   recordSupplierPayment,
   type CustomerAccount,
+  type AccountLedgerEntry,
   type SupplierAccount,
 } from '@/src/repositories/accounts'
 import { getActiveWorkspace, type Permission, type Workspace } from '@/src/repositories/workspace'
@@ -29,8 +32,14 @@ export default function AccountsScreen() {
   const [permissions, setPermissions] = useState<Permission[]>([])
   const [customers, setCustomers] = useState<CustomerAccount[]>([])
   const [suppliers, setSuppliers] = useState<SupplierAccount[]>([])
+  const [customerEntries, setCustomerEntries] = useState<AccountLedgerEntry[]>([])
+  const [supplierEntries, setSupplierEntries] = useState<AccountLedgerEntry[]>([])
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null)
   const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(null)
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [supplierSearch, setSupplierSearch] = useState('')
+  const [customersWithBalanceOnly, setCustomersWithBalanceOnly] = useState(false)
+  const [suppliersWithBalanceOnly, setSuppliersWithBalanceOnly] = useState(false)
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
   const [customerAmount, setCustomerAmount] = useState('')
@@ -83,6 +92,43 @@ export default function AccountsScreen() {
     void load().catch((reason: unknown) => setError(localizeError(reason, 'accounts.loadError')))
   }, [load, localizeError]))
 
+  useEffect(() => {
+    if (!workspace || !selectedCustomerId) {
+      setCustomerEntries([])
+      return
+    }
+    let active = true
+    void listCustomerLedgerEntries(database, workspace, selectedCustomerId)
+      .then((entries) => { if (active) setCustomerEntries(entries) })
+      .catch((reason: unknown) => {
+        if (active) setError(localizeError(reason, 'accounts.loadError'))
+      })
+    return () => { active = false }
+  }, [database, localizeError, selectedCustomerId, workspace])
+
+  useEffect(() => {
+    if (!workspace || !selectedSupplierId) {
+      setSupplierEntries([])
+      return
+    }
+    let active = true
+    void listSupplierLedgerEntries(database, workspace, selectedSupplierId)
+      .then((entries) => { if (active) setSupplierEntries(entries) })
+      .catch((reason: unknown) => {
+        if (active) setError(localizeError(reason, 'accounts.loadError'))
+      })
+    return () => { active = false }
+  }, [database, localizeError, selectedSupplierId, workspace])
+
+  const filteredCustomers = useMemo(() => customers.filter((customer) => {
+    const matchesSearch = `${customer.name} ${customer.phone}`.toLocaleLowerCase().includes(customerSearch.trim().toLocaleLowerCase())
+    return matchesSearch && (!customersWithBalanceOnly || customer.balanceMinor > 0)
+  }), [customerSearch, customers, customersWithBalanceOnly])
+  const filteredSuppliers = useMemo(() => suppliers.filter((supplier) => {
+    const matchesSearch = `${supplier.name} ${supplier.phone}`.toLocaleLowerCase().includes(supplierSearch.trim().toLocaleLowerCase())
+    return matchesSearch && (!suppliersWithBalanceOnly || supplier.balanceMinor > 0)
+  }), [supplierSearch, suppliers, suppliersWithBalanceOnly])
+
   const runAction = async (action: () => Promise<void>, successMessage: string) => {
     if (!workspace) return
     setSaving(true)
@@ -114,7 +160,18 @@ export default function AccountsScreen() {
         <Card>
           <Text style={styles.sectionTitle}>{t('accounts.debtors')}</Text>
           <Text style={styles.muted}>{t('accounts.customerHelp')}</Text>
-          {customers.length === 0 ? <Text style={styles.muted}>{t('accounts.noCustomers')}</Text> : customers.map((customer) => (
+          <Field label={t('accounts.search')} value={customerSearch} onChangeText={setCustomerSearch} autoCapitalize="none" />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ selected: customersWithBalanceOnly }}
+            onPress={() => setCustomersWithBalanceOnly((current) => !current)}
+            style={styles.balanceFilter}
+          >
+            <Text style={styles.filterText}>{t(customersWithBalanceOnly ? 'accounts.showAll' : 'accounts.showOutstanding')}</Text>
+          </Pressable>
+          {filteredCustomers.length === 0
+            ? <Text style={styles.muted}>{customers.length === 0 ? t('accounts.noCustomers') : t('accounts.noMatches')}</Text>
+            : filteredCustomers.map((customer) => (
             <Pressable
               key={customer.id}
               accessibilityRole="button"
@@ -131,6 +188,25 @@ export default function AccountsScreen() {
               </Text>
             </Pressable>
           ))}
+          {selectedCustomerId ? (
+            <View style={styles.history}>
+              <Text style={styles.historyTitle}>{t('accounts.statement')}</Text>
+              {customerEntries.length === 0 ? <Text style={styles.muted}>{t('accounts.noEntries')}</Text> : customerEntries.map((entry) => (
+                <View key={entry.id} style={styles.historyRow}>
+                  <View style={styles.accountInfo}>
+                    <Text style={styles.accountName}>{t(entry.entryType === 'debt' ? 'accounts.debtEntry' : 'accounts.paymentEntry')}</Text>
+                    <Text style={styles.muted}>
+                      {new Date(entry.createdAt).toLocaleString(language === 'sw' ? 'sw-TZ' : 'en-TZ')}
+                      {entry.note ? ` · ${entry.note}` : ''}
+                    </Text>
+                  </View>
+                  <Text style={[styles.balance, entry.entryType === 'debt' && styles.debt]}>
+                    {entry.entryType === 'debt' ? '+' : '−'}{formatTzs(entry.amountMinor, language)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
           <Field label={t('accounts.customerName')} value={customerName} onChangeText={setCustomerName} />
           <Field label={t('accounts.phone')} value={customerPhone} onChangeText={setCustomerPhone} keyboardType="phone-pad" />
           <Button
@@ -169,7 +245,18 @@ export default function AccountsScreen() {
         <Card>
           <Text style={styles.sectionTitle}>{t('accounts.creditors')}</Text>
           <Text style={styles.muted}>{t('accounts.supplierHelp')}</Text>
-          {suppliers.length === 0 ? <Text style={styles.muted}>{t('accounts.noSuppliers')}</Text> : suppliers.map((supplier) => (
+          <Field label={t('accounts.search')} value={supplierSearch} onChangeText={setSupplierSearch} autoCapitalize="none" />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ selected: suppliersWithBalanceOnly }}
+            onPress={() => setSuppliersWithBalanceOnly((current) => !current)}
+            style={styles.balanceFilter}
+          >
+            <Text style={styles.filterText}>{t(suppliersWithBalanceOnly ? 'accounts.showAll' : 'accounts.showOutstanding')}</Text>
+          </Pressable>
+          {filteredSuppliers.length === 0
+            ? <Text style={styles.muted}>{suppliers.length === 0 ? t('accounts.noSuppliers') : t('accounts.noMatches')}</Text>
+            : filteredSuppliers.map((supplier) => (
             <Pressable
               key={supplier.id}
               accessibilityRole="button"
@@ -186,6 +273,25 @@ export default function AccountsScreen() {
               </Text>
             </Pressable>
           ))}
+          {selectedSupplierId ? (
+            <View style={styles.history}>
+              <Text style={styles.historyTitle}>{t('accounts.statement')}</Text>
+              {supplierEntries.length === 0 ? <Text style={styles.muted}>{t('accounts.noEntries')}</Text> : supplierEntries.map((entry) => (
+                <View key={entry.id} style={styles.historyRow}>
+                  <View style={styles.accountInfo}>
+                    <Text style={styles.accountName}>{t(entry.entryType === 'bill' ? 'accounts.billEntry' : 'accounts.paymentEntry')}</Text>
+                    <Text style={styles.muted}>
+                      {new Date(entry.createdAt).toLocaleString(language === 'sw' ? 'sw-TZ' : 'en-TZ')}
+                      {entry.note ? ` · ${entry.note}` : ''}
+                    </Text>
+                  </View>
+                  <Text style={[styles.balance, entry.entryType === 'bill' && styles.debt]}>
+                    {entry.entryType === 'bill' ? '+' : '−'}{formatTzs(entry.amountMinor, language)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
           <Field label={t('accounts.supplierName')} value={supplierName} onChangeText={setSupplierName} />
           <Field label={t('accounts.phone')} value={supplierPhone} onChangeText={setSupplierPhone} keyboardType="phone-pad" />
           <Button
@@ -249,6 +355,11 @@ function createStyles(colors: ThemeColors) {
     accountName: { color: colors.text, fontSize: 15, fontWeight: '600' },
     balance: { color: colors.text, fontSize: 14, fontWeight: '700' },
     debt: { color: colors.danger },
+    balanceFilter: { alignSelf: 'flex-start', borderColor: colors.border, borderRadius: 16, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8 },
+    filterText: { color: colors.accent, fontSize: 13, fontWeight: '600' },
+    history: { borderTopColor: colors.border, borderTopWidth: 1, gap: 10, paddingTop: 12 },
+    historyTitle: { color: colors.text, fontSize: 15, fontWeight: '700' },
+    historyRow: { alignItems: 'center', borderTopColor: colors.border, borderTopWidth: 1, flexDirection: 'row', gap: 10, justifyContent: 'space-between', paddingVertical: 8 },
     error: { color: colors.danger, fontSize: 14 },
     success: { color: colors.success, fontSize: 14, fontWeight: '600' },
   })

@@ -18,6 +18,14 @@ export interface SupplierAccount {
   balanceMinor: number
 }
 
+export interface AccountLedgerEntry {
+  id: string
+  entryType: 'debt' | 'payment' | 'bill'
+  amountMinor: number
+  note: string
+  createdAt: string
+}
+
 export async function listCustomers(
   database: SQLiteDatabase,
   workspace: Workspace,
@@ -39,6 +47,30 @@ export async function listCustomers(
     workspace.businessId,
     workspace.storeId,
     workspace.businessId,
+  )
+}
+
+export async function listCustomerLedgerEntries(
+  database: SQLiteDatabase,
+  workspace: Workspace,
+  customerId: string,
+): Promise<AccountLedgerEntry[]> {
+  await assertActiveWorkspace(database, workspace)
+  await assertPermission(database, workspace, 'sell')
+  const customer = await database.getFirstAsync<{ id: string }>(
+    'SELECT id FROM customers WHERE id = ? AND business_id = ?',
+    customerId,
+    workspace.businessId,
+  )
+  if (!customer) throw new Error('The selected customer is not available in this business.')
+  return database.getAllAsync<AccountLedgerEntry>(
+    `SELECT id, entry_type AS entryType, amount_minor AS amountMinor, note, created_at AS createdAt
+     FROM customer_ledger
+     WHERE business_id = ? AND store_id = ? AND customer_id = ?
+     ORDER BY created_at DESC, id DESC`,
+    workspace.businessId,
+    workspace.storeId,
+    customerId,
   )
 }
 
@@ -158,6 +190,25 @@ export async function listSuppliers(
     workspace.businessId,
     workspace.storeId,
     workspace.businessId,
+  )
+}
+
+export async function listSupplierLedgerEntries(
+  database: SQLiteDatabase,
+  workspace: Workspace,
+  supplierId: string,
+): Promise<AccountLedgerEntry[]> {
+  await assertActiveWorkspace(database, workspace)
+  await assertPermission(database, workspace, 'manage_inventory')
+  await assertSupplierExists(database, workspace.businessId, supplierId)
+  return database.getAllAsync<AccountLedgerEntry>(
+    `SELECT id, entry_type AS entryType, amount_minor AS amountMinor, note, created_at AS createdAt
+     FROM supplier_ledger
+     WHERE business_id = ? AND store_id = ? AND supplier_id = ?
+     ORDER BY created_at DESC, id DESC`,
+    workspace.businessId,
+    workspace.storeId,
+    supplierId,
   )
 }
 
