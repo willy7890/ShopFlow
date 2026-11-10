@@ -32,6 +32,11 @@ export interface CashbookTotals {
   expenseMinor: number
 }
 
+export interface CashbookEntryFilter {
+  days?: 7 | 30 | 90
+  search?: string
+}
+
 export async function getCashbookTotals(
   database: SQLiteDatabase,
   workspace: Workspace,
@@ -53,19 +58,42 @@ export async function getCashbookTotals(
 export async function listCashbookEntries(
   database: SQLiteDatabase,
   workspace: Workspace,
+  filter: CashbookEntryFilter = {},
 ): Promise<CashbookEntry[]> {
   await assertActiveWorkspace(database, workspace)
   await assertCashbookPermission(database, workspace)
+  const clauses = ['business_id = ?', 'store_id = ?']
+  const values: (string | number)[] = [workspace.businessId, workspace.storeId]
+  if (filter.days) {
+    clauses.push('created_at >= ?')
+    values.push(new Date(Date.now() - filter.days * 24 * 60 * 60 * 1000).toISOString())
+  }
+  const search = filter.search?.trim()
+  if (search) {
+    clauses.push('(category LIKE ? COLLATE NOCASE OR note LIKE ? COLLATE NOCASE)')
+    values.push(`%${search}%`, `%${search}%`)
+  }
   return database.getAllAsync<CashbookEntry>(
     `SELECT id, entry_type AS entryType, source, category, amount_minor AS amountMinor,
        note, created_at AS createdAt
      FROM cashbook_entries
-     WHERE business_id = ? AND store_id = ?
+     WHERE ${clauses.join(' AND ')}
      ORDER BY created_at DESC
-     LIMIT 50`,
-    workspace.businessId,
-    workspace.storeId,
+     LIMIT 200`,
+    ...values,
   )
+}
+
+export function cashbookEntriesToCsv(entries: CashbookEntry[]): string {
+  const fields: Array<keyof CashbookEntry> = ['createdAt', 'entryType', 'source', 'category', 'amountMinor', 'note']
+  const quote = (value: string | number) => {
+    const text = String(value)
+    return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
+  }
+  return [
+    fields.join(','),
+    ...entries.map((entry) => fields.map((field) => quote(entry[field])).join(',')),
+  ].join('\r\n')
 }
 
 async function assertCashbookPermission(

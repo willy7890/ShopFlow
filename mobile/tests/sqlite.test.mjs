@@ -21,12 +21,15 @@ import {
   createCustomer,
   createSupplier,
   listCustomers,
+  listCustomerLedgerEntries,
   listSuppliers,
+  listSupplierLedgerEntries,
   recordCustomerPayment,
   recordSupplierBill,
   recordSupplierPayment,
 } from '../src/repositories/accounts.ts'
 import {
+  cashbookEntriesToCsv,
   createManualCashbookEntry,
   getCashbookTotals,
   getLocalReport,
@@ -383,6 +386,12 @@ test('customer debts and supplier payables are isolated, balanced and atomic', a
     await assert.rejects(recordCustomerPayment(database, workspace, customer.id, 701, '', randomUUID), /cannot exceed the outstanding balance/)
     await recordCustomerPayment(database, workspace, customer.id, 200, 'Part payment', randomUUID)
     assert.equal((await listCustomers(database, workspace))[0].balanceMinor, 500)
+    const customerStatement = await listCustomerLedgerEntries(database, workspace, customer.id)
+    assert.equal(customerStatement.length, 2)
+    assert.deepEqual(customerStatement.map(({ entryType, amountMinor }) => ({ entryType, amountMinor })), [
+      { entryType: 'payment', amountMinor: 200 },
+      { entryType: 'debt', amountMinor: 700 },
+    ])
 
     const originalStock = (await listProducts(database, workspace))[0].quantity
     await recordSupplierBill(database, workspace, supplier.id, 800, 'Flour delivery invoice', randomUUID)
@@ -392,6 +401,12 @@ test('customer debts and supplier payables are isolated, balanced and atomic', a
     await assert.rejects(recordSupplierPayment(database, workspace, supplier.id, 801, '', randomUUID), /cannot exceed the outstanding balance/)
     await recordSupplierPayment(database, workspace, supplier.id, 300, '', randomUUID)
     assert.equal((await listSuppliers(database, workspace))[0].balanceMinor, 500)
+    const supplierStatement = await listSupplierLedgerEntries(database, workspace, supplier.id)
+    assert.equal(supplierStatement.length, 2)
+    assert.deepEqual(supplierStatement.map(({ entryType, amountMinor }) => ({ entryType, amountMinor })), [
+      { entryType: 'payment', amountMinor: 300 },
+      { entryType: 'bill', amountMinor: 800 },
+    ])
     assert.equal((await getCashbookTotals(database, workspace)).expenseMinor, 300)
     await createManualCashbookEntry(database, workspace, {
       entryType: 'income',
@@ -408,6 +423,16 @@ test('customer debts and supplier payables are isolated, balanced and atomic', a
     const cashbookTotals = await getCashbookTotals(database, workspace)
     assert.deepEqual({ ...cashbookTotals }, { incomeMinor: 1500, expenseMinor: 350 })
     assert.equal((await listCashbookEntries(database, workspace)).length, 5)
+    assert.equal((await listCashbookEntries(database, workspace, { days: 7, search: 'Transport' })).length, 1)
+    assert.match(cashbookEntriesToCsv([{
+      id: 'csv-test',
+      entryType: 'expense',
+      source: 'manual',
+      category: 'Fuel, local',
+      amountMinor: 50,
+      note: 'Driver said "paid"',
+      createdAt: '2025-01-01T00:00:00.000Z',
+    }]), /"Fuel, local",50,"Driver said ""paid""/)
     const report = await getLocalReport(database, workspace, 30)
     assert.equal(report.salesTotalMinor, 1000)
     assert.equal(report.salesCount, 1)

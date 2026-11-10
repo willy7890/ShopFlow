@@ -3,10 +3,13 @@ import * as Crypto from 'expo-crypto'
 import { useFocusEffect } from 'expo-router'
 import { useSQLiteContext } from 'expo-sqlite'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { cacheDirectory, deleteAsync, writeAsStringAsync } from 'expo-file-system/legacy'
+import * as Sharing from 'expo-sharing'
 import { Button, Card, Field, LoadingState, PageTitle, Screen } from '@/src/components/NativeUi'
 import { formatTzs, parseTzsAmount } from '@/src/domain/money'
 import {
   createManualCashbookEntry,
+  cashbookEntriesToCsv,
   getCashbookTotals,
   listCashbookEntries,
   type CashbookEntry,
@@ -30,6 +33,8 @@ export default function CashbookScreen() {
   const [category, setCategory] = useState('')
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
+  const [search, setSearch] = useState('')
+  const [days, setDays] = useState<7 | 30 | 90>(30)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -62,7 +67,7 @@ export default function CashbookScreen() {
         || currentType === 'expense' && userPermissions.includes('manage_inventory')
       ) ? currentType : userPermissions.includes('sell') ? 'income' : 'expense')
       const [nextEntries, nextTotals] = await Promise.all([
-        listCashbookEntries(database, current),
+        listCashbookEntries(database, current, { days, search }),
         getCashbookTotals(database, current),
       ])
       setEntries(nextEntries)
@@ -70,7 +75,7 @@ export default function CashbookScreen() {
     } finally {
       setLoading(false)
     }
-  }, [database])
+  }, [database, days, search])
 
   useFocusEffect(useCallback(() => {
     void load().catch((reason: unknown) => setError(localizeError(reason, 'cashbook.loadError')))
@@ -100,6 +105,30 @@ export default function CashbookScreen() {
     }).catch((reason: unknown) => {
       setError(localizeError(reason, 'cashbook.saveError'))
     }).finally(() => setSaving(false))
+  }
+
+  const exportEntries = async () => {
+    let fileUri: string | null = null
+    try {
+      if (!cacheDirectory) throw new Error(t('cashbook.exportUnavailable'))
+      fileUri = `${cacheDirectory}cashbook-${Crypto.randomUUID()}.csv`
+      await writeAsStringAsync(fileUri, cashbookEntriesToCsv(entries))
+      await Sharing.shareAsync(fileUri, {
+        mimeType: 'text/csv',
+        UTI: 'public.comma-separated-values-text',
+        dialogTitle: t('cashbook.exportTitle'),
+      })
+    } catch (reason) {
+      setError(localizeError(reason, 'cashbook.exportError'))
+    } finally {
+      if (fileUri) {
+        try {
+          await deleteAsync(fileUri, { idempotent: true })
+        } catch (reason) {
+          setError(localizeError(reason, 'cashbook.exportError'))
+        }
+      }
+    }
   }
 
   if (loading) return <Screen><LoadingState label={t('common.loading')} /></Screen>
@@ -155,6 +184,21 @@ export default function CashbookScreen() {
 
       <Card>
         <Text style={styles.sectionTitle}>{t('cashbook.recent')}</Text>
+        <Field label={t('cashbook.search')} value={search} onChangeText={setSearch} autoCapitalize="none" />
+        <View style={styles.typeRow}>
+          {([7, 30, 90] as const).map((period) => (
+            <Pressable
+              key={period}
+              accessibilityRole="button"
+              accessibilityState={{ selected: days === period }}
+              onPress={() => setDays(period)}
+              style={[styles.typeButton, days === period && styles.selectedType]}
+            >
+              <Text style={styles.typeText}>{t('reports.period', { days: period })}</Text>
+            </Pressable>
+          ))}
+        </View>
+        {entries.length > 0 ? <Button label={t('cashbook.export')} secondary onPress={() => void exportEntries()} /> : null}
         {entries.length === 0 ? <Text style={styles.muted}>{t('cashbook.empty')}</Text> : entries.map((entry) => (
           <View key={entry.id} style={styles.entryRow}>
             <View style={styles.entryInfo}>
