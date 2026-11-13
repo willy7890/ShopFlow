@@ -24,9 +24,11 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env
-uvicorn app.main:app --reload
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 API docs: `http://127.0.0.1:8000/api/v1/docs`
+
+For the mobile app on a physical device, start Expo in LAN mode on the same Wi-Fi as this computer. The app derives the local API host from Expo's LAN address and connects to port `8000`; the backend must bind to `0.0.0.0` as shown above. `EXPO_PUBLIC_API_URL` can override the detected local address when needed. `127.0.0.1` is only the phone/emulator itself from a mobile app's point of view.
 
 ## Required headers
 For endpoints requiring business membership, include:

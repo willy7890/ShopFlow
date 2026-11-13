@@ -1,6 +1,7 @@
 import * as SecureStore from 'expo-secure-store'
+import Constants from 'expo-constants'
 import type { SQLiteDatabase } from 'expo-sqlite'
-import { defaultApiBaseUrl, normalizeApiBaseUrl } from '../domain/apiUrl.ts'
+import { apiBaseUrlFromPackagerHost, defaultApiBaseUrl, normalizeApiBaseUrl } from '../domain/apiUrl.ts'
 import type { Language } from '../i18n/translations.ts'
 
 const ACCESS_TOKEN_KEY = 'shopflow.api.access-token'
@@ -91,7 +92,9 @@ export async function getApiBaseUrl(database: SQLiteDatabase): Promise<string> {
   )
   return defaultApiBaseUrl(
     true,
-    setting?.setting_value ?? process.env.EXPO_PUBLIC_API_URL,
+    process.env.EXPO_PUBLIC_API_URL
+      ?? apiBaseUrlFromPackagerHost(Constants.expoConfig?.hostUri)
+      ?? setting?.setting_value,
   )
 }
 

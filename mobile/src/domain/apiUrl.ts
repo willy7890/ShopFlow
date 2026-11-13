@@ -2,6 +2,18 @@ export const PRODUCTION_API_BASE_URL = 'https://shopflow-u5q3.onrender.com/api/v
 
 const DEVELOPMENT_API_BASE_URL = 'http://127.0.0.1:8000/api/v1'
 
+/** Build a device-reachable API URL from Expo's LAN dev-server address. */
+export function apiBaseUrlFromPackagerHost(hostUri?: string | null): string | undefined {
+  if (!hostUri) return undefined
+  try {
+    const parsed = new URL(hostUri.includes('://') ? hostUri : `http://${hostUri}`)
+    if (!isLocalAddress(parsed.hostname) || parsed.hostname === '0.0.0.0') return undefined
+    return normalizeApiBaseUrl(`http://${parsed.hostname}:8000`)
+  } catch {
+    return undefined
+  }
+}
+
 export function normalizeApiBaseUrl(value: string): string {
   const parsed = new URL(value.trim())
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
