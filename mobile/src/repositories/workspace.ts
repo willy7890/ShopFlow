@@ -11,6 +11,10 @@ export type Permission =
   | 'manage_inventory'
   | 'sell'
   | 'view_reports'
+  | 'view_dashboard'
+  | 'manage_finance'
+  | 'manage_customers'
+  | 'manage_suppliers'
   | 'manage_settings'
 
 export interface Workspace {
@@ -40,6 +44,7 @@ export interface LoginState {
 const ALL_PERMISSIONS: Permission[] = [
   'manage_business', 'manage_stores', 'manage_employees', 'manage_products',
   'manage_inventory', 'sell', 'view_reports', 'manage_settings',
+  'view_dashboard', 'manage_finance', 'manage_customers', 'manage_suppliers',
 ]
 
 export async function getActiveWorkspace(database: SQLiteDatabase): Promise<Workspace | null> {
@@ -95,6 +100,10 @@ export async function activateRemoteWorkspace(
     manage_inventory: 'manage_inventory',
     manage_sales: 'sell',
     view_reports: 'view_reports',
+    view_dashboard: 'view_dashboard',
+    manage_finance: 'manage_finance',
+    manage_customers: 'manage_customers',
+    manage_suppliers: 'manage_suppliers',
     manage_settings: 'manage_settings',
   }
   const now = new Date().toISOString()
@@ -315,8 +324,41 @@ export async function assertPermission(
   workspace: Workspace,
   permission: Permission,
 ): Promise<void> {
+  if (!(await hasPermission(database, workspace, permission))) {
+    throw new Error('You do not have permission to perform this action in the selected store.')
+  }
+}
+
+export async function assertAnyPermission(
+  database: SQLiteDatabase,
+  workspace: Workspace,
+  permissions: Permission[],
+): Promise<void> {
   const activeRole = await assertActiveWorkspace(database, workspace)
   if (activeRole === 'owner') return
+  if (permissions.length === 0) throw new Error('At least one permission is required.')
+  const placeholders = permissions.map(() => '?').join(', ')
+  const allowed = await database.getFirstAsync<{ allowed: number }>(
+    `SELECT 1 AS allowed
+     FROM user_store_permissions
+     WHERE business_id = ? AND store_id = ? AND user_id = ?
+       AND permission IN (${placeholders})
+     LIMIT 1`,
+    workspace.businessId,
+    workspace.storeId,
+    workspace.userId,
+    ...permissions,
+  )
+  if (!allowed) throw new Error('You do not have permission to perform this action in the selected store.')
+}
+
+export async function hasPermission(
+  database: SQLiteDatabase,
+  workspace: Workspace,
+  permission: Permission,
+): Promise<boolean> {
+  const activeRole = await assertActiveWorkspace(database, workspace)
+  if (activeRole === 'owner') return true
   const allowed = await database.getFirstAsync<{ allowed: number }>(
     `SELECT 1 AS allowed
      FROM user_store_permissions
@@ -326,7 +368,7 @@ export async function assertPermission(
     workspace.userId,
     permission,
   )
-  if (!allowed) throw new Error('You do not have permission to perform this action in the selected store.')
+  return Boolean(allowed)
 }
 
 export async function assertActiveWorkspace(

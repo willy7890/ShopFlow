@@ -43,6 +43,10 @@ type BackendSale = {
   items: { variant_id: string; product_name: string; variant_name: string; quantity: number | string; unit_price: number | string }[]
   payments: { method: string; amount: number | string; status: string }[]
 }
+type BackendCashbookEntry = {
+  id: string; store_id: string | null; entry_type: string; direction: 'in' | 'out'; amount: number | string
+  category: string; reference_type: string | null; reference_id: string | null; note: string | null; created_at: string
+}
 type BackendPurchase = {
   id: string; supplier_id: string | null; reference_number: string | null; total_amount: number | string
   paid_amount: number | string; created_at: string
@@ -178,7 +182,7 @@ async function loadMe(token: string, user: BackendUser, preferredBusinessId?: st
 
 async function login(email: string, password: string) {
   const result = await p<BackendSession>('/auth/login', { email, password })
-  return { token: result.access_token, me: await loadMe(result.access_token, result.user) }
+  return { token: result.access_token, refreshToken: result.refresh_token, me: await loadMe(result.access_token, result.user) }
 }
 
 async function fetchCustomers() {
@@ -404,6 +408,80 @@ async function fetchDashboard(period: string, storeId: string): Promise<T.Dashbo
   }
 }
 
+function cashbookType(entryType: string): T.CashEntry['type'] {
+  if (entryType === 'sale_receipt') return 'sale'
+  if (entryType === 'customer_payment') return 'collect'
+  if (entryType === 'supplier_payment') return 'spay'
+  if (entryType === 'refund') return 'refund'
+  if (entryType === 'expense') return 'expense'
+  if (entryType === 'opening_balance') return 'open'
+  return 'purchase'
+}
+
+async function fetchCashbook(): Promise<T.CashEntry[]> {
+  const entries = await g<BackendCashbookEntry[]>('/finance/entries')
+  let balance = 0
+  return entries.slice().reverse().map((entry) => {
+    const value = amount(entry.amount)
+    const incoming = entry.direction === 'in' ? value : 0
+    const outgoing = entry.direction === 'out' ? value : 0
+    balance += incoming - outgoing
+    return {
+      date: entry.created_at.slice(0, 10), type: cashbookType(entry.entry_type),
+      ref: entry.category || entry.reference_id || entry.note || entry.id,
+      method: entry.reference_type?.startsWith('method:') ? entry.reference_type.slice(7) : '',
+      in: incoming, out: outgoing, balance,
+    }
+  })
+}
+
+async function fetchExpenses(): Promise<T.Expense[]> {
+  const entries = await g<BackendCashbookEntry[]>('/finance/entries', { entry_type: 'expense' })
+  return entries.map((entry) => ({
+    id: entry.id, date: entry.created_at.slice(0, 10), category: entry.category,
+    amount: amount(entry.amount), method: 'cash', store: entry.store_id ?? '',
+    description: entry.note ?? '',
+  }))
+}
+
+async function fetchInventoryMovements(): Promise<T.Movement[]> {
+  const storeId = useAuth.getState().storeId
+  if (!storeId || storeId === 'all') throw new Error('Select a store to view its stock movements.')
+  const [movements, products] = await Promise.all([
+    g<{ id: string; variant_id: string; movement_type: string; quantity_delta: number | string; reference_id: string | null; store_id: string }[]>('/inventory/movements', { store_id: storeId }),
+    fetchProducts(),
+  ])
+  const variants = new Map(products.flatMap((product) => product.variants.map((variant) => [String(variantIds.get(variant.id)), `${product.name} ${variant.label}`.trim()])))
+  return movements.map((movement) => ({
+    date: '', product: variants.get(movement.variant_id) ?? movement.variant_id,
+    type: movement.movement_type === 'sale' ? 'sale' : movement.movement_type === 'purchase' ? 'purchase' : movement.movement_type === 'refund' ? 'return' : 'adjust',
+    qty: amount(movement.quantity_delta), ref: movement.reference_id ?? movement.id,
+    user: '', store: movement.store_id,
+  }))
+}
+
+async function pushSales(payloads: T.SalePayload[]): Promise<T.SyncResult[]> {
+  const { me, storeId } = useAuth.getState()
+  const activeStore = me?.stores.some((store) => store.id === storeId) ? storeId : me?.stores[0]?.id
+  if (!activeStore) throw new Error('Create or select a store before syncing sales.')
+  const response = await p<{ client_id: string; state: string; message?: string }[]>('/sync/push', {
+    items: payloads.map((sale) => ({
+      ...sale, clientId: sale.clientId, store_id: activeStore,
+      items: sale.items.map((item) => {
+        const variantId = item.variantId === undefined ? undefined : variantIds.get(item.variantId)
+        if (!variantId) throw new Error(`The selected variant for ${item.name} is unavailable. Reload the product list.`)
+        return { variant_id: variantId, quantity: item.qty, unit_price: item.price }
+      }),
+      payments: sale.payments.map((payment) => ({ ...payment, method: payment.method === 'mm' ? 'mobile_money' : payment.method })),
+    })),
+  })
+  return response.map((result) => ({
+    clientId: result.client_id,
+    state: result.state === 'synced' ? 'synced' : result.state === 'conflict' ? 'conflict' : 'failed',
+    message: result.message,
+  }))
+}
+
 /** Real REST implementation for the FastAPI endpoints consumed by the frontend. */
 export const httpApi: Api = {
   auth: {
@@ -415,7 +493,7 @@ export const httpApi: Api = {
         password: data.password,
         business_name: `${data.name}'s Shop`,
       })
-      return { token: result.access_token, me: await loadMe(result.access_token, result.user) }
+      return { token: result.access_token, refreshToken: result.refresh_token, me: await loadMe(result.access_token, result.user) }
     },
     forgot: async () => { throw new Error('Password recovery is not available on the backend yet.') },
     reset: async () => { throw new Error('Password recovery is not available on the backend yet.') },
@@ -470,7 +548,7 @@ export const httpApi: Api = {
     restock: async () => { throw new Error('Restocking is not available on the backend yet.') },
   },
   inventory: {
-    movements: async () => { throw new Error('Inventory movement data is not available through this adapter yet.') },
+    movements: fetchInventoryMovements,
     adjust: async () => { throw new Error('Inventory adjustments are not available on the backend yet.') },
   },
   sales: {
@@ -563,14 +641,23 @@ export const httpApi: Api = {
     },
   },
   finance: {
-    expenses: async () => { throw new Error('Expense entry data is not available through this adapter yet.') },
-    saveExpense: async () => { throw new Error('Expense entry is not available on the backend yet.') },
-    cashbook: async () => { throw new Error('Cashbook entries are not available through this adapter yet.') },
+    expenses: fetchExpenses,
+    saveExpense: async (expense) => {
+      const storeId = expense.store || useAuth.getState().me?.stores[0]?.id
+      if (!storeId) throw new Error('Create or select a store before recording an expense.')
+      await p('/finance/entries', {
+        store_id: storeId, entry_type: 'expense', direction: 'out', amount: expense.amount,
+        category: expense.category, reference_type: `method:${expense.method}`,
+        note: expense.description || undefined,
+      })
+      return { ...expense, id: expense.id ?? `expense-${Date.now()}` }
+    },
+    cashbook: fetchCashbook,
     dashboard: fetchDashboard,
     report: fetchReport,
   },
   ai: { ask: (question, lang) => p('/assistant/ask', { question, language: lang }) },
-  sync: { push: async () => { throw new Error('Offline sync is not available through this adapter yet.') } },
+  sync: { push: pushSales },
   admin: {
     employees: async () => (await g<BackendEmployee[]>('/employees')).map((employee): T.Employee => ({
       id: employee.id,

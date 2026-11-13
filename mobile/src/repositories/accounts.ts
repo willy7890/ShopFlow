@@ -2,7 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite'
 import { accountInput } from '../domain/validation.ts'
 import { writeCashbookEntry } from './cashbook.ts'
 import type { Workspace } from './workspace.ts'
-import { assertActiveWorkspace, assertPermission } from './workspace.ts'
+import { assertActiveWorkspace, assertAnyPermission } from './workspace.ts'
 
 export interface CustomerAccount {
   id: string
@@ -34,7 +34,7 @@ export async function listCustomers(
   includeArchived = false,
 ): Promise<CustomerAccount[]> {
   await assertActiveWorkspace(database, workspace)
-  await assertPermission(database, workspace, 'sell')
+  await assertAnyPermission(database, workspace, ['sell', 'manage_customers'])
   return database.getAllAsync<CustomerAccount>(
     `SELECT customers.id, customers.name, customers.phone, customers.is_active AS isActive,
        COALESCE(SUM(CASE
@@ -61,7 +61,7 @@ export async function updateCustomer(
   input: { name: string; phone?: string },
   createId: () => string,
 ): Promise<void> {
-  await assertPermission(database, workspace, 'sell')
+  await assertAnyPermission(database, workspace, ['sell', 'manage_customers'])
   const parsed = accountInput.safeParse(input)
   if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? 'Customer details are invalid.')
   const now = new Date().toISOString()
@@ -92,7 +92,7 @@ export async function setCustomerArchived(
   archived: boolean,
   createId: () => string,
 ): Promise<void> {
-  await assertPermission(database, workspace, 'sell')
+  await assertAnyPermission(database, workspace, ['sell', 'manage_customers'])
   const now = new Date().toISOString()
   await database.withExclusiveTransactionAsync(async (transaction) => {
     const result = await transaction.runAsync(
@@ -116,7 +116,7 @@ export async function listCustomerLedgerEntries(
   customerId: string,
 ): Promise<AccountLedgerEntry[]> {
   await assertActiveWorkspace(database, workspace)
-  await assertPermission(database, workspace, 'sell')
+  await assertAnyPermission(database, workspace, ['sell', 'manage_customers'])
   const customer = await database.getFirstAsync<{ id: string }>(
     'SELECT id FROM customers WHERE id = ? AND business_id = ?',
     customerId,
@@ -140,7 +140,7 @@ export async function createCustomer(
   input: { name: string; phone?: string },
   createId: () => string,
 ): Promise<void> {
-  await assertPermission(database, workspace, 'sell')
+  await assertAnyPermission(database, workspace, ['sell', 'manage_customers'])
   const parsed = accountInput.safeParse(input)
   if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? 'Customer details are invalid.')
   const id = createId()
@@ -171,7 +171,7 @@ export async function recordCustomerPayment(
   note: string,
   createId: () => string,
 ): Promise<void> {
-  await assertPermission(database, workspace, 'sell')
+  await assertAnyPermission(database, workspace, ['sell', 'manage_customers'])
   validateAmount(amountMinor)
   const entryId = createId()
   const outboxId = createId()
@@ -235,7 +235,7 @@ export async function listSuppliers(
   includeArchived = false,
 ): Promise<SupplierAccount[]> {
   await assertActiveWorkspace(database, workspace)
-  await assertPermission(database, workspace, 'manage_inventory')
+  await assertAnyPermission(database, workspace, ['manage_inventory', 'manage_suppliers'])
   return database.getAllAsync<SupplierAccount>(
     `SELECT suppliers.id, suppliers.name, suppliers.phone, suppliers.is_active AS isActive,
        COALESCE(SUM(CASE
@@ -262,7 +262,7 @@ export async function updateSupplier(
   input: { name: string; phone?: string },
   createId: () => string,
 ): Promise<void> {
-  await assertPermission(database, workspace, 'manage_inventory')
+  await assertAnyPermission(database, workspace, ['manage_inventory', 'manage_suppliers'])
   const parsed = accountInput.safeParse(input)
   if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? 'Supplier details are invalid.')
   const now = new Date().toISOString()
@@ -293,7 +293,7 @@ export async function setSupplierArchived(
   archived: boolean,
   createId: () => string,
 ): Promise<void> {
-  await assertPermission(database, workspace, 'manage_inventory')
+  await assertAnyPermission(database, workspace, ['manage_inventory', 'manage_suppliers'])
   const now = new Date().toISOString()
   await database.withExclusiveTransactionAsync(async (transaction) => {
     const result = await transaction.runAsync(
@@ -317,7 +317,7 @@ export async function listSupplierLedgerEntries(
   supplierId: string,
 ): Promise<AccountLedgerEntry[]> {
   await assertActiveWorkspace(database, workspace)
-  await assertPermission(database, workspace, 'manage_inventory')
+  await assertAnyPermission(database, workspace, ['manage_inventory', 'manage_suppliers'])
   await assertSupplierExists(database, workspace.businessId, supplierId)
   return database.getAllAsync<AccountLedgerEntry>(
     `SELECT id, entry_type AS entryType, amount_minor AS amountMinor, note, created_at AS createdAt
@@ -336,7 +336,7 @@ export async function createSupplier(
   input: { name: string; phone?: string },
   createId: () => string,
 ): Promise<void> {
-  await assertPermission(database, workspace, 'manage_inventory')
+  await assertAnyPermission(database, workspace, ['manage_inventory', 'manage_suppliers'])
   const parsed = accountInput.safeParse(input)
   if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? 'Supplier details are invalid.')
   const id = createId()
@@ -367,7 +367,7 @@ export async function recordSupplierBill(
   note: string,
   createId: () => string,
 ): Promise<void> {
-  await assertPermission(database, workspace, 'manage_inventory')
+  await assertAnyPermission(database, workspace, ['manage_inventory', 'manage_suppliers'])
   validateAmount(amountMinor)
   const entryId = createId()
   const outboxId = createId()
@@ -406,7 +406,7 @@ export async function recordSupplierPayment(
   note: string,
   createId: () => string,
 ): Promise<void> {
-  await assertPermission(database, workspace, 'manage_inventory')
+  await assertAnyPermission(database, workspace, ['manage_inventory', 'manage_suppliers'])
   validateAmount(amountMinor)
   const entryId = createId()
   const outboxId = createId()

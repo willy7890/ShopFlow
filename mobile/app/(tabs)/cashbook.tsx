@@ -62,7 +62,7 @@ export default function CashbookScreen() {
         return
       }
       const userPermissions = current.role === 'owner'
-        ? ['sell', 'manage_inventory', 'view_reports', 'manage_settings'] as Permission[]
+        ? ['sell', 'manage_inventory', 'view_reports', 'manage_settings', 'manage_finance'] as Permission[]
         : (await database.getAllAsync<{ permission: Permission }>(
           `SELECT permission FROM user_store_permissions
            WHERE business_id = ? AND store_id = ? AND user_id = ?`,
@@ -73,7 +73,9 @@ export default function CashbookScreen() {
       setPermissions(userPermissions)
       setEntryType((currentType) => (
         currentType === 'income' && userPermissions.includes('sell')
+        || currentType === 'income' && userPermissions.includes('manage_finance')
         || currentType === 'expense' && userPermissions.includes('manage_inventory')
+        || currentType === 'expense' && userPermissions.includes('manage_finance')
       ) ? currentType : userPermissions.includes('sell') ? 'income' : 'expense')
       const [nextEntries, nextTotals] = await Promise.all([
         listCashbookEntries(database, current, { days, search }),
@@ -92,13 +94,13 @@ export default function CashbookScreen() {
     void load().catch((reason: unknown) => setError(localizeError(reason, 'cashbook.loadError')))
   }, [load, localizeError]))
 
-  const canRecordIncome = permissions.includes('sell')
-  const canRecordExpense = permissions.includes('manage_inventory')
+  const canRecordIncome = permissions.includes('sell') || permissions.includes('manage_finance')
+  const canRecordExpense = permissions.includes('manage_inventory') || permissions.includes('manage_finance')
   const parsedAmount = parseTzsAmount(amount)
   const parsedOpeningAmount = parseTzsAmount(openingAmount)
   const parsedCountedBalance = parseTzsAmount(countedBalance)
   const net = totals.incomeMinor - totals.expenseMinor
-  const canManageCashbookSettings = permissions.includes('manage_settings')
+  const canManageCashbookSettings = permissions.includes('manage_settings') || permissions.includes('manage_finance')
 
   const saveEntry = () => {
     if (!workspace || parsedAmount === null) return

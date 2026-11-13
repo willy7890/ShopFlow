@@ -2,16 +2,37 @@ import { useEffect, useState } from 'react'
 import * as Crypto from 'expo-crypto'
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router'
 import { useSQLiteContext } from 'expo-sqlite'
-import { Text } from 'react-native'
-import { Button, Card, Field, LanguageSelector, LoadingState, PageTitle, Screen } from '@/src/components/NativeUi'
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native'
+import {
+  Button,
+  Card,
+  Field,
+  LanguageSelector,
+  LoadingState,
+  PageTitle,
+  PasswordField,
+  Screen,
+} from '@/src/components/NativeUi'
+import { firstAuthIssue, validateOnlineLogin, validateOnlineRegistration } from '@/src/domain/authValidation'
 import {
   authenticateUser,
   getLoginState,
   initializeLegacyOwnerCredentials,
 } from '@/src/repositories/workspace'
-import { clearOnlineSession, getApiBaseUrl, loginOnline, registerOnline } from '@/src/services/api'
-import { useTheme } from '@/src/theme/colors'
+import {
+  clearOnlineSession,
+  fetchCurrentUser,
+  getApiBaseUrl,
+  loginOnline,
+  registerOnline,
+} from '@/src/services/api'
+import { useTheme, type ThemeColors } from '@/src/theme/colors'
 import { useI18n } from '@/src/i18n/I18nProvider'
+import type { TranslationKey } from '@/src/i18n/translations'
+import { postLoginRoute } from '@/src/domain/platformAdmin'
+
+type OnlineAction = 'login' | 'register'
+type AuthField = 'email' | 'password' | 'fullName' | 'phone' | 'businessName' | 'confirmPassword'
 
 export default function LoginScreen() {
   const { colors } = useTheme()
@@ -19,37 +40,64 @@ export default function LoginScreen() {
   const database = useSQLiteContext()
   const router = useRouter()
   const { notice } = useLocalSearchParams<{ notice?: string }>()
+  const styles = createStyles(colors)
   const [loading, setLoading] = useState(true)
+  const [hasBusiness, setHasBusiness] = useState(true)
   const [legacyOwner, setLegacyOwner] = useState(false)
   const [displayName, setDisplayName] = useState('')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const [mode, setMode] = useState<'device' | 'online'>('device')
-  const [onlineAction, setOnlineAction] = useState<'login' | 'register'>('login')
+  const [mode, setMode] = useState<'device' | 'online'>('online')
+  const [onlineAction, setOnlineAction] = useState<OnlineAction>('login')
   const [apiUrl, setApiUrl] = useState('')
   const [fullName, setFullName] = useState('')
+  const [phone, setPhone] = useState('')
   const [businessName, setBusinessName] = useState('')
   const [email, setEmail] = useState('')
   const [onlinePassword, setOnlinePassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<AuthField, TranslationKey>>>({})
 
   useEffect(() => {
     let active = true
-    getApiBaseUrl(database).then((value) => {
-      if (active) setApiUrl(value)
-    }).catch((reason: unknown) => {
-      if (active) setError(localizeError(reason, 'auth.apiAddressError'))
-    })
-    getLoginState(database).then((state) => {
-      if (active) setLegacyOwner(state.hasCredentiallessOwner)
-    }).catch((reason: unknown) => {
-      if (active) setError(localizeError(reason, 'auth.localAccountError'))
-    }).finally(() => {
-      if (active) setLoading(false)
-    })
+    Promise.allSettled([getApiBaseUrl(database), getLoginState(database)])
+      .then(([apiResult, loginResult]) => {
+        if (!active) return
+        if (apiResult.status === 'fulfilled') {
+          setApiUrl(apiResult.value)
+        } else {
+          setError(localizeError(apiResult.reason, 'auth.apiAddressError'))
+        }
+        if (loginResult.status === 'fulfilled') {
+          setLegacyOwner(loginResult.value.hasCredentiallessOwner)
+          setHasBusiness(loginResult.value.hasBusiness)
+        } else {
+          setError(localizeError(loginResult.reason, 'auth.localAccountError'))
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
     return () => { active = false }
   }, [database, localizeError])
+
+  const switchAction = (action: OnlineAction) => {
+    setOnlineAction(action)
+    setError(null)
+    setFieldErrors({})
+  }
+
+  const updateField = (field: AuthField, setter: (value: string) => void) => (value: string) => {
+    setter(value)
+    setFieldErrors((current) => {
+      if (!current[field]) return current
+      const next = { ...current }
+      delete next[field]
+      return next
+    })
+  }
 
   const signIn = async () => {
     setSaving(true)
@@ -70,19 +118,19 @@ export default function LoginScreen() {
   }
 
   const signInOnline = async () => {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      setError(t('errors.emailInvalid'))
-      return
-    }
-    if (!onlinePassword) {
-      setError(t('errors.onlinePasswordRequired'))
+    const errors = firstAuthIssue(validateOnlineLogin(email, onlinePassword))
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors)
+      setError(null)
       return
     }
     setSaving(true)
     setError(null)
+    setFieldErrors({})
     try {
       await loginOnline(database, apiUrl, email, onlinePassword)
-      router.replace('/businesses' as Href)
+      const currentUser = await fetchCurrentUser(database)
+      router.replace(postLoginRoute(currentUser) as Href)
     } catch (reason) {
       setError(localizeError(reason, 'auth.signInError'))
     } finally {
@@ -91,33 +139,38 @@ export default function LoginScreen() {
   }
 
   const signUpOnline = async () => {
-    if (fullName.trim().length < 2) {
-      setError(t('errors.onlineFullName'))
-      return
-    }
-    if (businessName.trim().length < 2) {
-      setError(t('errors.onlineBusinessName'))
-      return
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      setError(t('errors.emailInvalid'))
-      return
-    }
-    if (onlinePassword.length < 8) {
-      setError(t('errors.onlinePasswordLength'))
+    const errors = firstAuthIssue(validateOnlineRegistration({
+      fullName,
+      email,
+      phone,
+      businessName,
+      password: onlinePassword,
+      confirmPassword,
+    }))
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors)
+      setError(null)
       return
     }
     setSaving(true)
     setError(null)
+    setFieldErrors({})
     try {
-      await registerOnline(database, apiUrl, {
+      const registeredUser = await registerOnline(database, apiUrl, {
         fullName,
         email,
+        phone,
         password: onlinePassword,
         businessName,
         preferredLanguage: language,
       })
-      router.replace('/businesses' as Href)
+      const destination = postLoginRoute(registeredUser)
+      router.replace({
+        pathname: destination,
+        params: destination === '/businesses'
+          ? { notice: t('auth.registrationSuccess') }
+          : undefined,
+      })
     } catch (reason) {
       setError(localizeError(reason, 'auth.registerError'))
     } finally {
@@ -125,78 +178,285 @@ export default function LoginScreen() {
     }
   }
 
-  if (loading) return <Screen><LoadingState label={t('auth.checkingLocal')} /></Screen>
+  if (loading) return <Screen compact><LoadingState label={t('auth.checkingLocal')} /></Screen>
 
   return (
-    <Screen>
-      <LanguageSelector />
-      <PageTitle
-        title={mode === 'device' && legacyOwner ? t('auth.secureExisting') : t('auth.login')}
-        subtitle={mode === 'device' && legacyOwner
-          ? t('auth.legacySubtitle')
-          : mode === 'online'
-            ? t('auth.onlineSubtitle')
-            : t('auth.localSubtitle')}
-      />
-      <Button
-        label={mode === 'device' ? t('auth.useOnline') : t('auth.useOffline')}
-        secondary
-        onPress={() => {
-          setMode((current) => current === 'device' ? 'online' : 'device')
-          setError(null)
-        }}
-        disabled={saving}
-      />
-      <Card>
-        {mode === 'device' ? (
-          <>
-            {legacyOwner ? (
-              <Field label={t('auth.ownerName')} value={displayName} onChangeText={setDisplayName} autoCapitalize="words" />
-            ) : null}
-            <Field label={t('auth.username')} value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} />
-            <Field label={t('auth.password')} value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" />
-          </>
-        ) : (
-          <>
-            <Field label={t('auth.apiAddress')} value={apiUrl} onChangeText={setApiUrl} autoCapitalize="none" autoCorrect={false} keyboardType="url" />
-            {onlineAction === 'register' ? (
-              <>
-                <Field label={t('auth.fullName')} value={fullName} onChangeText={setFullName} autoCapitalize="words" />
-                <Field label={t('auth.businessName')} value={businessName} onChangeText={setBusinessName} autoCapitalize="words" />
-              </>
-            ) : null}
-            <Field label={t('auth.email')} value={email} onChangeText={setEmail} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" />
-            <Field label={t('auth.password')} value={onlinePassword} onChangeText={setOnlinePassword} secureTextEntry autoCapitalize="none" />
-            <Button
-              label={saving
-                ? t('auth.connecting')
-                : onlineAction === 'login'
-                  ? t('auth.signInOnline')
-                  : t('auth.createOnline')}
-              onPress={() => void (onlineAction === 'login' ? signInOnline() : signUpOnline())}
+    <Screen keyboardAware compact>
+      <View style={styles.container}>
+        <LanguageSelector />
+        <View style={styles.brand}>
+          <Image
+            accessibilityLabel={t('welcome.logoDescription')}
+            source={require('../assets/images/icon.png')}
+            resizeMode="contain"
+            style={styles.logo}
+          />
+          <View style={styles.brandCopy}>
+            <Text style={styles.brandName}>{t('app.name')}</Text>
+            <Text style={styles.brandSubtitle}>{t('auth.brandSubtitle')}</Text>
+          </View>
+        </View>
+
+        <View style={styles.modeTabs} accessibilityRole="tablist">
+          <AuthTab
+            label={t('auth.onlineMode')}
+            selected={mode === 'online'}
+            onPress={() => { setMode('online'); setError(null); setFieldErrors({}) }}
+            disabled={saving}
+            colors={colors}
+          />
+          <AuthTab
+            label={t('auth.deviceMode')}
+            selected={mode === 'device'}
+            onPress={() => { setMode('device'); setError(null); setFieldErrors({}) }}
+            disabled={saving}
+            colors={colors}
+          />
+        </View>
+
+        <PageTitle
+          title={mode === 'device' && legacyOwner
+            ? t('auth.secureExisting')
+            : mode === 'online'
+              ? t(onlineAction === 'login' ? 'auth.signInTitle' : 'auth.createAccountTitle')
+              : t('auth.login')}
+          subtitle={mode === 'device' && legacyOwner
+            ? t('auth.legacySubtitle')
+            : mode === 'online'
+              ? t(onlineAction === 'login' ? 'auth.onlineSubtitle' : 'auth.registrationSubtitle')
+              : t('auth.localSubtitle')}
+        />
+
+        {mode === 'online' ? (
+          <View style={styles.actionTabs} accessibilityRole="tablist">
+            <AuthTab
+              label={t('auth.signInTab')}
+              selected={onlineAction === 'login'}
+              onPress={() => switchAction('login')}
               disabled={saving}
+              colors={colors}
             />
-            <Button
-              label={onlineAction === 'login' ? t('auth.createAccount') : t('auth.haveAccount')}
-              secondary
-              onPress={() => {
-                setOnlineAction((current) => current === 'login' ? 'register' : 'login')
-                setError(null)
-              }}
+            <AuthTab
+              label={t('auth.createAccountTab')}
+              selected={onlineAction === 'register'}
+              onPress={() => switchAction('register')}
               disabled={saving}
+              colors={colors}
             />
-          </>
-        )}
-        {notice ? <Text style={{ color: colors.danger }}>{notice}</Text> : null}
-        {error ? <Text style={{ color: colors.danger }}>{error}</Text> : null}
-        {mode === 'device' ? (
+          </View>
+        ) : null}
+
+        {!hasBusiness && mode === 'device' ? (
           <Button
-            label={saving ? t('auth.verifying') : legacyOwner ? t('auth.secureOwner') : t('auth.login')}
-            onPress={() => void signIn()}
+            label={t('setup.create')}
+            secondary
+            onPress={() => router.push('/setup')}
             disabled={saving}
           />
         ) : null}
-      </Card>
+
+        <Card style={styles.formCard}>
+          {mode === 'device' ? (
+            <>
+              {legacyOwner ? (
+                <Field
+                  label={t('auth.ownerName')}
+                  value={displayName}
+                  onChangeText={setDisplayName}
+                  autoCapitalize="words"
+                />
+              ) : null}
+              <Field
+                label={t('auth.username')}
+                value={username}
+                onChangeText={setUsername}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <PasswordField label={t('auth.password')} value={password} onChangeText={setPassword} />
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+              {notice ? <Text style={styles.success}>{notice}</Text> : null}
+              <Button
+                label={saving ? t('auth.verifying') : legacyOwner ? t('auth.secureOwner') : t('auth.login')}
+                onPress={() => void signIn()}
+                disabled={saving}
+              />
+            </>
+          ) : (
+            <>
+              {onlineAction === 'register' ? (
+                <>
+                  <Field
+                    label={t('auth.fullName')}
+                    value={fullName}
+                    onChangeText={updateField('fullName', setFullName)}
+                    autoCapitalize="words"
+                    maxLength={160}
+                    error={fieldErrors.fullName ? t(fieldErrors.fullName) : undefined}
+                  />
+                  <Field
+                    label={t('auth.email')}
+                    value={email}
+                    onChangeText={updateField('email', setEmail)}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="email-address"
+                    maxLength={254}
+                    error={fieldErrors.email ? t(fieldErrors.email) : undefined}
+                  />
+                  <Field
+                    label={t('auth.phone')}
+                    value={phone}
+                    onChangeText={updateField('phone', setPhone)}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="phone-pad"
+                    maxLength={32}
+                    error={fieldErrors.phone ? t(fieldErrors.phone) : undefined}
+                  />
+                  <Field
+                    label={t('auth.businessName')}
+                    value={businessName}
+                    onChangeText={updateField('businessName', setBusinessName)}
+                    autoCapitalize="words"
+                    maxLength={180}
+                    error={fieldErrors.businessName ? t(fieldErrors.businessName) : undefined}
+                  />
+                </>
+              ) : (
+                <Field
+                  label={t('auth.email')}
+                  value={email}
+                  onChangeText={updateField('email', setEmail)}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  maxLength={254}
+                  error={fieldErrors.email ? t(fieldErrors.email) : undefined}
+                />
+              )}
+              <PasswordField
+                label={t('auth.password')}
+                value={onlinePassword}
+                onChangeText={updateField('password', setOnlinePassword)}
+                maxLength={128}
+                error={fieldErrors.password ? t(fieldErrors.password) : undefined}
+              />
+              {onlineAction === 'register' ? (
+                <PasswordField
+                  label={t('auth.confirmPassword')}
+                  value={confirmPassword}
+                  onChangeText={updateField('confirmPassword', setConfirmPassword)}
+                  maxLength={128}
+                  error={fieldErrors.confirmPassword ? t(fieldErrors.confirmPassword) : undefined}
+                />
+              ) : null}
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+              {notice ? <Text style={styles.success}>{notice}</Text> : null}
+              <Button
+                label={saving
+                  ? t('auth.connecting')
+                  : t(onlineAction === 'login' ? 'auth.signInOnline' : 'auth.createOnline')}
+                onPress={() => void (onlineAction === 'login' ? signInOnline() : signUpOnline())}
+                disabled={saving || !apiUrl}
+              />
+              <Text style={styles.footerText}>
+                {onlineAction === 'login' ? t('auth.noAccount') : t('auth.haveAccountPrompt')}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => switchAction(onlineAction === 'login' ? 'register' : 'login')}
+                disabled={saving}
+                style={styles.footerLink}
+              >
+                <Text style={styles.linkText}>
+                  {t(onlineAction === 'login' ? 'auth.createAccountTab' : 'auth.signInTab')}
+                </Text>
+              </Pressable>
+            </>
+          )}
+        </Card>
+      </View>
     </Screen>
   )
+}
+
+function AuthTab({
+  label,
+  selected,
+  onPress,
+  disabled,
+  colors,
+}: {
+  label: string
+  selected: boolean
+  onPress: () => void
+  disabled: boolean
+  colors: ThemeColors
+}) {
+  const styles = stylesForAuthTab(colors)
+  return (
+    <Pressable
+      accessibilityRole="tab"
+      accessibilityState={{ selected, disabled }}
+      onPress={onPress}
+      disabled={disabled}
+      style={[
+        styles.tab,
+        selected && styles.tabSelected,
+      ]}
+    >
+      <Text style={[
+        styles.tabText,
+        selected && styles.tabTextSelected,
+      ]}>
+        {label}
+      </Text>
+    </Pressable>
+  )
+}
+
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: { alignItems: 'center', alignSelf: 'center', gap: 18, maxWidth: 480, width: '100%' },
+    brand: { alignItems: 'center', flexDirection: 'row', gap: 12, justifyContent: 'center', paddingVertical: 2 },
+    logo: { borderRadius: 13, height: 48, width: 48 },
+    brandCopy: { gap: 2 },
+    brandName: { color: colors.text, fontSize: 20, fontWeight: '800' },
+    brandSubtitle: { color: colors.muted, fontSize: 12 },
+    modeTabs: {
+      backgroundColor: colors.surfaceMuted,
+      borderColor: colors.border,
+      borderRadius: 14,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: 5,
+      maxWidth: 480,
+      padding: 4,
+      width: '100%',
+    },
+    actionTabs: { flexDirection: 'row', gap: 8, maxWidth: 480, width: '100%' },
+    formCard: { maxWidth: 480, width: '100%' },
+    error: { color: colors.danger, fontSize: 13, lineHeight: 18 },
+    success: { color: colors.accentPressed, fontSize: 13, lineHeight: 18 },
+    footerText: { color: colors.muted, fontSize: 13, textAlign: 'center' },
+    footerLink: { alignItems: 'center', minHeight: 40, justifyContent: 'center' },
+    linkText: { color: colors.accentPressed, fontSize: 14, fontWeight: '700' },
+  })
+}
+
+function stylesForAuthTab(colors: ThemeColors) {
+  return StyleSheet.create({
+    tab: {
+      alignItems: 'center',
+      borderRadius: 10,
+      flex: 1,
+      justifyContent: 'center',
+      minHeight: 44,
+      paddingHorizontal: 8,
+    },
+    tabSelected: { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 },
+    tabText: { color: colors.muted, fontSize: 13, fontWeight: '600', textAlign: 'center' },
+    tabTextSelected: { color: colors.text, fontWeight: '700' },
+  })
 }

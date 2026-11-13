@@ -17,7 +17,7 @@ export function Login() {
   const { t } = useT(); const nav = useNavigate(); const { setSession, expired } = useAuth()
   const schema = z.object({ email: email(t), password: pass(t) })
   const f = useForm<z.infer<typeof schema>>({ resolver: zodResolver(schema) })
-  const m = useMutation({ mutationFn: (d: z.infer<typeof schema>) => api.auth.login(d.email, d.password), onSuccess: (r) => { setSession(r.token, r.me); nav(r.me.user.isSuperAdmin ? '/platform-admin' : r.me.business ? '/' : '/onboarding') } })
+  const m = useMutation({ mutationFn: (d: z.infer<typeof schema>) => api.auth.login(d.email, d.password), onSuccess: (r) => { setSession(r.token, r.me, r.refreshToken); nav(r.me.user.isSuperAdmin ? '/platform-admin' : r.me.business ? '/' : '/onboarding') } })
   return (
     <AuthFrame title={t('wb')}>
       <h1 className="text-3xl font-bold text-center mb-1">{t('login')}</h1><p className="text-mu text-center mb-6">{t('loginSub')}</p>
@@ -38,7 +38,7 @@ export function Register() {
   const { t } = useT(); const nav = useNavigate(); const { setSession } = useAuth()
   const schema = z.object({ name: z.string().min(1, t('req')), email: email(t), password: pass(t) })
   const f = useForm<z.infer<typeof schema>>({ resolver: zodResolver(schema) })
-  const m = useMutation({ mutationFn: api.auth.register, onSuccess: (r) => { setSession(r.token, r.me); nav('/onboarding') } })
+  const m = useMutation({ mutationFn: api.auth.register, onSuccess: (r) => { setSession(r.token, r.me, r.refreshToken); nav('/onboarding') } })
   return (
     <AuthFrame title={t('wl')} reverse>
       <h1 className="text-3xl font-bold text-center mb-1">{t('reg')}</h1><p className="text-mu text-center mb-6">{t('regSub')}</p>

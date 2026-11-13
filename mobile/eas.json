@@ -1,0 +1,24 @@
+{
+  "cli": {
+    "version": ">= 16.0.0"
+  },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://shopflow-u5q3.onrender.com/api/v1"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production": {
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://shopflow-u5q3.onrender.com/api/v1"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      }
+    }
+  }
+}

@@ -20,7 +20,7 @@ export interface Sale {
 export interface SalePayload { clientId: string; type: 'pos' | 'quick'; customer: string; items: SaleItem[]; payments: { method: Method; amount: number }[]; description?: string }
 export interface Purchase { no: string; date: string; supplier: string; lines: { variantId: string | number; name: string; qty: number; cost: number }[]; total: number; paid: number }
 export interface PurchasePayload { supplier: string; lines: { variantId: number; qty: number; cost: number }[]; paid: number }
-export interface Expense { id: number; date: string; category: string; amount: number; method: Method; store: string; description: string; receipt?: string; edited?: boolean }
+export interface Expense { id: string | number; date: string; category: string; amount: number; method: Method; store: string; description: string; receipt?: string; edited?: boolean }
 export interface Employee { id: string; name: string; email: string; role: Role; stores: string[]; permissions: string[]; status: 'active' | 'inactive' | 'invited' }
 export interface AdminPlan { id: string; slug: string; name: string; price: string; currency: string; duration_days: number; features: Record<string, boolean | number | string>; is_active: boolean }
 export interface AdminBusiness { id: string; name: string; business_type: string; currency: string; is_active: boolean; subscription: { plan_id: string | null; status: string; expires_at: string | null } | null }

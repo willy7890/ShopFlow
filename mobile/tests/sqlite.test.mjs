@@ -11,6 +11,7 @@ import {
   createProduct,
   deleteCategory,
   findProductByBarcode,
+  findProductByCode,
   listCategories,
   listProducts,
   updateProduct,
@@ -52,6 +53,7 @@ import {
   reconcileCashbook,
 } from '../src/repositories/cashbook.ts'
 import {
+  assertAnyPermission,
   assertPermission,
   activateRemoteWorkspace,
   authenticateUser,
@@ -106,7 +108,7 @@ test('SQLite migrations, offline sale persistence and stock rollback are consist
   try {
     await migrateDatabase(database)
     await migrateDatabase(database)
-    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 11)
+    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 12)
     await validateShopFlowBackup(database)
 
     const workspace = await createWorkspace(database, {
@@ -156,8 +158,31 @@ test('SQLite migrations, offline sale persistence and stock rollback are consist
     assert.equal(product.categoryName, 'Beverages')
     assert.equal((await listProducts(database, workspace, '1234567890123')).length, 1)
     assert.equal((await findProductByBarcode(database, workspace, ' 1234567890123 ')).variantId, product.variantId)
+    assert.equal((await findProductByCode(database, workspace, 'TEA-250')).variantId, product.variantId)
     assert.equal(await findProductByBarcode(database, workspace, '0000000000000'), null)
     assert.equal(await findProductByBarcode(database, workspace, '   '), null)
+    assert.equal(await findProductByCode(database, workspace, 'unknown-qr-value'), null)
+    await assert.rejects(createProduct(database, workspace, {
+      name: 'Duplicate tea',
+      sku: 'TEA-DUP',
+      barcode: '1234567890123',
+      unitCode: 'pcs',
+      costPriceMinor: 300,
+      sellPriceMinor: 500,
+      initialQuantity: 1,
+      lowStockThreshold: 0,
+    }, randomUUID), /product code is already assigned/)
+    await assert.rejects(createProduct(database, workspace, {
+      name: 'Duplicate SKU as barcode',
+      sku: '1234567890123',
+      barcode: '9876543210000',
+      unitCode: 'pcs',
+      costPriceMinor: 300,
+      sellPriceMinor: 500,
+      initialQuantity: 1,
+      lowStockThreshold: 0,
+    }, randomUUID), /product code is already assigned/)
+    assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM products')).count, 1)
     await switchStore(database, workspace, secondStore.id)
     const secondStoreWorkspace = await getActiveWorkspace(database)
     assert.ok(secondStoreWorkspace)
@@ -188,6 +213,13 @@ test('SQLite migrations, offline sale persistence and stock rollback are consist
     assert.equal(sale.totalMinor, 1000)
     assert.equal(sale.changeMinor, 200)
     assert.equal((await listProducts(database, workspace))[0].quantity, 1)
+    await assert.rejects(
+      createCashSale(database, workspace, {
+        items: [{ variantId: product.variantId, quantity: 2 }],
+        cashTenderedMinor: 1200,
+      }, randomUUID),
+      /only 1 in stock/,
+    )
     assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM sales')).count, 1)
     assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM payments')).count, 1)
     const sales = await listRecentSales(database, workspace)
@@ -433,7 +465,7 @@ test('database backups reject non-ShopFlow and unsupported schemas', async () =>
   try {
     await database.execAsync('PRAGMA user_version = 1; CREATE TABLE arbitrary_data (value TEXT);')
     await assert.rejects(validateShopFlowBackup(database), /does not contain a ShopFlow database/)
-    await database.execAsync('CREATE TABLE businesses (id TEXT); CREATE TABLE stores (id TEXT); CREATE TABLE users (id TEXT); CREATE TABLE app_settings (setting_key TEXT, setting_value TEXT); PRAGMA user_version = 12;')
+    await database.execAsync('CREATE TABLE businesses (id TEXT); CREATE TABLE stores (id TEXT); CREATE TABLE users (id TEXT); CREATE TABLE app_settings (setting_key TEXT, setting_value TEXT); PRAGMA user_version = 13;')
     await assert.rejects(validateShopFlowBackup(database), /unsupported ShopFlow database version/)
   } finally {
     database.close()
@@ -761,9 +793,9 @@ test('version 1 local business data upgrades in place and persists the default l
 
     await migrateDatabase(database)
     await migrateDatabase(database)
-    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 11)
+    assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, 12)
     assert.equal((await database.getFirstAsync('SELECT name FROM businesses WHERE id = ?', 'business-v1')).name, 'Existing Shop')
-    assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM user_store_permissions')).count, 8)
+    assert.equal((await database.getFirstAsync('SELECT COUNT(*) AS count FROM user_store_permissions')).count, 12)
     assert.equal((await getActiveWorkspace(database)).userId, 'owner-v1')
     assert.equal((await database.getFirstAsync(
       "SELECT setting_value FROM app_settings WHERE setting_key = 'active_store_id'",
@@ -835,7 +867,7 @@ test('remote business access activates a store-scoped local workspace', async ()
       currency: 'TZS',
       role: 'cashier',
       store_ids: ['remote-store'],
-      permissions: ['manage_sales'],
+      permissions: ['manage_sales', 'view_dashboard', 'manage_finance', 'manage_customers', 'manage_suppliers'],
       stores: [{
         id: 'remote-store',
         business_id: 'remote-business',
@@ -854,6 +886,16 @@ test('remote business access activates a store-scoped local workspace', async ()
       "SELECT setting_value FROM app_settings WHERE setting_key = 'active_context'",
     )).setting_value, 'online')
     await assertPermission(database, workspace, 'sell')
+    await assertPermission(database, workspace, 'view_dashboard')
+    await assertPermission(database, workspace, 'manage_finance')
+    await assertPermission(database, workspace, 'manage_customers')
+    await assertPermission(database, workspace, 'manage_suppliers')
+    await assertAnyPermission(database, workspace, ['sell', 'manage_customers'])
+    await assertAnyPermission(database, workspace, ['manage_inventory', 'manage_suppliers'])
+    await assert.rejects(
+      assertAnyPermission(database, workspace, ['manage_products', 'manage_inventory']),
+      /do not have permission/,
+    )
     await assert.rejects(
       assertPermission(database, workspace, 'manage_products'),
       /do not have permission/,

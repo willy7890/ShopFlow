@@ -1,6 +1,8 @@
 import { useState, type PropsWithChildren, type ReactNode } from 'react'
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,20 +14,35 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useTheme, type ThemeColors } from '@/src/theme/colors'
 import { useI18n } from '@/src/i18n/I18nProvider'
+import { passwordVisibilityState, togglePasswordVisibility } from '@/src/domain/passwordVisibility'
 
-export function Screen({ children }: PropsWithChildren) {
+export function Screen({
+  children,
+  keyboardAware = false,
+  compact = false,
+}: PropsWithChildren<{ keyboardAware?: boolean; compact?: boolean }>) {
   const { colors } = useTheme()
   const styles = createStyles(colors)
+  const scrollView = (
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={[styles.content, compact && styles.compactContent]}
+      keyboardDismissMode="on-drag"
+      keyboardShouldPersistTaps="handled"
+    >
+      {children}
+    </ScrollView>
+  )
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.content}
-        keyboardDismissMode="on-drag"
-        keyboardShouldPersistTaps="handled"
-      >
-        {children}
-      </ScrollView>
+      {keyboardAware ? (
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+        >
+          {scrollView}
+        </KeyboardAvoidingView>
+      ) : scrollView}
     </SafeAreaView>
   )
 }
@@ -63,6 +80,52 @@ export function Field({
         placeholderTextColor={colors.muted}
         style={[styles.input, props.style]}
       />
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+    </View>
+  )
+}
+
+export function PasswordField({
+  label,
+  value,
+  onChangeText,
+  autoCapitalize = 'none',
+  error,
+  ...props
+}: TextInputProps & { label: string; error?: string }) {
+  const { colors } = useTheme()
+  const { t } = useI18n()
+  const styles = createStyles(colors)
+  const [visible, setVisible] = useState(false)
+  const visibility = passwordVisibilityState(visible)
+  return (
+    <View style={styles.field}>
+      <Text style={styles.label}>{label}</Text>
+      <View style={styles.passwordInput}>
+        <TextInput
+          {...props}
+          accessibilityLabel={label}
+          autoCapitalize={autoCapitalize}
+          onChangeText={onChangeText}
+          placeholderTextColor={colors.muted}
+          secureTextEntry={visibility.secureTextEntry}
+          style={styles.passwordTextInput}
+          value={value}
+        />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t(visibility.accessibilityLabel)}
+          accessibilityState={{ selected: visible }}
+          onPress={() => setVisible(togglePasswordVisibility)}
+          style={styles.passwordVisibility}
+          hitSlop={8}
+        >
+          <View style={styles.eye}>
+            <View style={styles.eyePupil} />
+            {!visible ? <View style={styles.eyeSlash} /> : null}
+          </View>
+        </Pressable>
+      </View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
     </View>
   )
@@ -153,6 +216,7 @@ function createStyles(colors: ThemeColors) {
     safeArea: { flex: 1, backgroundColor: colors.background },
     scroll: { flex: 1, backgroundColor: colors.background },
     content: { padding: 20, paddingTop: 64, paddingBottom: 36, gap: 16 },
+    compactContent: { paddingTop: 20, paddingBottom: 24 },
     titleBlock: { gap: 5, marginBottom: 2 },
     pageTitle: { color: colors.text, fontSize: 27, fontWeight: '700' },
     subtitle: { color: colors.muted, fontSize: 14, lineHeight: 20 },
@@ -175,6 +239,43 @@ function createStyles(colors: ThemeColors) {
       fontSize: 16,
       minHeight: 48,
       paddingHorizontal: 13,
+    },
+    passwordInput: {
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      borderColor: colors.border,
+      borderRadius: 11,
+      borderWidth: 1,
+      flexDirection: 'row',
+      minHeight: 50,
+    },
+    passwordTextInput: {
+      color: colors.text,
+      flex: 1,
+      fontSize: 16,
+      minHeight: 48,
+      paddingHorizontal: 13,
+    },
+    passwordVisibility: { alignItems: 'center', justifyContent: 'center', minHeight: 48, paddingHorizontal: 14 },
+    eye: {
+      alignItems: 'center',
+      borderColor: colors.muted,
+      borderRadius: 12,
+      borderWidth: 1.7,
+      height: 15,
+      justifyContent: 'center',
+      overflow: 'hidden',
+      width: 22,
+    },
+    eyePupil: { backgroundColor: colors.muted, borderRadius: 4, height: 7, width: 7 },
+    eyeSlash: {
+      backgroundColor: colors.surface,
+      height: 2,
+      left: -2,
+      position: 'absolute',
+      top: 6,
+      transform: [{ rotate: '-35deg' }],
+      width: 25,
     },
     error: { color: colors.danger, fontSize: 13 },
     button: {

@@ -78,7 +78,7 @@ export default function AccountsScreen() {
         return
       }
       const userPermissions = current.role === 'owner'
-        ? ['sell', 'manage_inventory'] as Permission[]
+        ? ['sell', 'manage_inventory', 'manage_customers', 'manage_suppliers'] as Permission[]
         : (await database.getAllAsync<{ permission: Permission }>(
           `SELECT permission FROM user_store_permissions
            WHERE business_id = ? AND store_id = ? AND user_id = ?`,
@@ -88,8 +88,12 @@ export default function AccountsScreen() {
         )).map(({ permission }) => permission)
       setPermissions(userPermissions)
       const [nextCustomers, nextSuppliers] = await Promise.all([
-        userPermissions.includes('sell') ? listCustomers(database, current, includeArchivedCustomers) : Promise.resolve([]),
-        userPermissions.includes('manage_inventory') ? listSuppliers(database, current, includeArchivedSuppliers) : Promise.resolve([]),
+        userPermissions.includes('sell') || userPermissions.includes('manage_customers')
+          ? listCustomers(database, current, includeArchivedCustomers)
+          : Promise.resolve([]),
+        userPermissions.includes('manage_inventory') || userPermissions.includes('manage_suppliers')
+          ? listSuppliers(database, current, includeArchivedSuppliers)
+          : Promise.resolve([]),
       ])
       setCustomers(nextCustomers)
       setSuppliers(nextSuppliers)
@@ -163,8 +167,8 @@ export default function AccountsScreen() {
   const parsedSupplierAmount = parseTzsAmount(supplierAmount)
   const selectedCustomer = customers.find(({ id }) => id === selectedCustomerId)
   const selectedSupplier = suppliers.find(({ id }) => id === selectedSupplierId)
-  const canSell = permissions.includes('sell')
-  const canManageInventory = permissions.includes('manage_inventory')
+  const canManageCustomers = permissions.includes('sell') || permissions.includes('manage_customers')
+  const canManageSuppliers = permissions.includes('manage_inventory') || permissions.includes('manage_suppliers')
 
   if (loading) return <Screen><LoadingState label={t('common.loading')} /></Screen>
   if (!workspace) return <Screen><PageTitle title={t('accounts.title')} /><Card><Text style={styles.muted}>{t('accounts.signInRequired')}</Text></Card></Screen>
@@ -172,7 +176,7 @@ export default function AccountsScreen() {
   return (
     <Screen>
       <PageTitle title={t('accounts.title')} subtitle={t('accounts.subtitle', { store: workspace.storeName })} />
-      {canSell ? (
+      {canManageCustomers ? (
         <Card>
           <Text style={styles.sectionTitle}>{t('accounts.debtors')}</Text>
           <Text style={styles.muted}>{t('accounts.customerHelp')}</Text>
@@ -316,7 +320,7 @@ export default function AccountsScreen() {
         </Card>
       ) : null}
 
-      {canManageInventory ? (
+      {canManageSuppliers ? (
         <Card>
           <Text style={styles.sectionTitle}>{t('accounts.creditors')}</Text>
           <Text style={styles.muted}>{t('accounts.supplierHelp')}</Text>

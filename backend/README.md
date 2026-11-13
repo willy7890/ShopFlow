@@ -55,8 +55,17 @@ Store operations additionally accept a `store_id` query/body value and validate 
 ## Purchase and stock rules
 A purchase starts as `draft`; stock is not increased until the explicit receive endpoint succeeds. Receiving a purchase is atomic: it adds stock balances and ledger movements, then marks the purchase received. Re-receiving is rejected. Stock quantity is stored in the variant's base unit. For example, receiving 2 cartons with `conversion_factor=24` adds 48 base units. Purchase cost is converted to base-unit cost for the weighted-average inventory valuation.
 
-## Development database note
-SQLite is the default for local development. For PostgreSQL, set `DATABASE_URL` in `.env` to a `postgresql+psycopg://...` URL. `create_all` is only a development convenience; production schema changes should use Alembic migrations, which will be added before production deployment.
+## Database and migrations
+SQLite is the default for local development. Set `DATABASE_URL` in `.env` to a `postgresql+psycopg://...` URL to use PostgreSQL locally. Render's `postgres://` and `postgresql://` URLs are normalized to the psycopg 3 driver automatically.
+
+The first Alembic revision creates missing tables and adds only the legacy compatibility columns already supported by the application. It never drops or resets tables, and its downgrade is intentionally disabled to protect business data. Production startup applies migrations before serving requests; development startup retains `create_all` as a local convenience.
+
+## Render deployment
+Configure the backend service with root directory `backend`, build command `pip install -r requirements.txt`, and start command `uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
+
+Set `APP_ENV=production`, `DATABASE_URL` to the Render PostgreSQL **internal** connection URL, `SECRET_KEY` to a newly generated random value of at least 32 characters, and `CORS_ORIGINS` to a comma-separated list of deployed web origins. Production startup rejects SQLite and the built-in development signing key. The liveness/readiness endpoint is `/health`; API docs are at `/api/v1/docs`.
+
+Generate a signing key locally with `python -c "import secrets; print(secrets.token_urlsafe(48))"` and enter it directly in Render's environment settings. Do not commit it or put it in mobile `EXPO_PUBLIC_*` variables.
 
 ## Business assistant provider
 The assistant is disabled unless `AI_API_BASE_URL`, `AI_API_KEY`, and `AI_MODEL` are configured on the backend. The backend sends the question and a small set of store-scoped aggregate sales, cashbook, and low-stock facts to that OpenAI-compatible endpoint. Do not configure a provider unless the business has approved this data transfer. The API key remains on the server and is never returned to mobile clients. Requests are limited by `AI_TIMEOUT_SECONDS`; an unavailable or unconfigured provider returns an explicit API error rather than an invented answer.

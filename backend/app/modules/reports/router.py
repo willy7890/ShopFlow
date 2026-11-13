@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -127,14 +127,20 @@ def _cost_of_goods_sold(membership: Membership, db: Session, sales: list[Sale]) 
                 .scalar()
             )
             total += abs(_safe_decimal(movement_cost or 0))
+        refund_ids = [
+            refund.id for refund in db.query(SaleRefund).filter(SaleRefund.sale_id == sale.id).all()
+        ]
         returned_cost = (
             db.query(func.coalesce(func.sum(StockMovement.quantity_delta * StockMovement.unit_cost), Decimal("0")))
             .filter(
                 StockMovement.business_id == membership.business_id,
                 StockMovement.store_id == sale.store_id,
                 StockMovement.reference_type == "sale_refund",
-                StockMovement.reference_id == sale.id,
                 StockMovement.movement_type == "refund",
+                or_(
+                    StockMovement.reference_id.in_(refund_ids),
+                    StockMovement.reference_id == sale.id,
+                ),
             )
             .scalar()
         )
@@ -153,6 +159,72 @@ def _escape_pdf_text(value: str) -> str:
     return value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
+def _filter_dashboard_permissions(
+    report: DashboardReportOut,
+    membership: Membership,
+    store_id: str | None,
+) -> DashboardReportOut:
+    if membership.role == "owner":
+        return report
+
+    permissions = set(membership.permissions or [])
+    can_view_reports = "view_reports" in permissions
+    can_view_sales = can_view_reports or "manage_sales" in permissions
+    can_view_finance = can_view_reports or "manage_finance" in permissions
+    can_view_inventory = can_view_reports or "manage_inventory" in permissions
+    can_view_customers = can_view_reports or "manage_customers" in permissions
+    can_view_suppliers = can_view_reports or "manage_suppliers" in permissions or "manage_finance" in permissions
+    zero = Decimal("0")
+    return report.model_copy(update={
+        "sales": report.sales if can_view_sales else report.sales.model_copy(update={
+            "total_sales": zero,
+            "total_refunds": zero,
+            "net_sales": zero,
+            "total_transactions": 0,
+            "average_transaction_value": zero,
+            "total_items_sold": zero,
+        }),
+        "profit": report.profit if can_view_finance else report.profit.model_copy(update={
+            "gross_revenue": zero,
+            "cost_of_goods_sold": zero,
+            "gross_profit": zero,
+            "total_refunds": zero,
+            "net_profit": zero,
+        }),
+        "inventory": report.inventory if can_view_inventory else report.inventory.model_copy(update={
+            "total_variants": 0,
+            "total_quantity": zero,
+            "total_stock_value": zero,
+            "total_retail_value": zero,
+            "out_of_stock_variants": 0,
+            "low_stock_items": [],
+            "best_selling_products": [],
+            "slow_moving_products": [],
+        }),
+        "debtors": report.debtors if can_view_customers else report.debtors.model_copy(update={
+            "customer_count": 0,
+            "total_outstanding": zero,
+            "overdue_customers": 0,
+            "customers": [],
+        }),
+        "suppliers": report.suppliers if can_view_suppliers else report.suppliers.model_copy(update={
+            "supplier_count": 0,
+            "total_payables": zero,
+            "suppliers": [],
+        }),
+        "store_performance": [
+            store.model_copy(update={
+                "sales_total": store.sales_total if can_view_sales else zero,
+                "transaction_count": store.transaction_count if can_view_sales else 0,
+                "expense_total": store.expense_total if can_view_finance else zero,
+                "net_cash": store.net_cash if can_view_finance else zero,
+            })
+            for store in report.store_performance
+            if store_id is None or store.store_id == store_id
+        ],
+    })
+
+
 @router.get("/dashboard")
 def dashboard_report(
     store_id: str | None = Query(default=None),
@@ -161,6 +233,10 @@ def dashboard_report(
     membership: Membership = Depends(get_business_membership),
     db: Session = Depends(get_db),
 ):
+    permissions = set(membership.permissions or [])
+    if membership.role != "owner" and not permissions.intersection({"view_dashboard", "view_reports"}):
+        raise HTTPException(status_code=403, detail="You do not have permission to view dashboard reports.")
+
     sales = _filtered_sales(membership, db, store_id, start_date, end_date)
     total_refunds = _money(_total_refunds_for_sales(membership, db, sales))
     gross_sales = _money(sum((sale.total_amount for sale in sales), Decimal("0")))
@@ -346,7 +422,7 @@ def dashboard_report(
             )
         )
 
-    return DashboardReportOut(
+    report = DashboardReportOut(
         sales=sales_report,
         profit=profit_report,
         inventory=inventory_report,
@@ -354,6 +430,20 @@ def dashboard_report(
         suppliers=supplier_report,
         store_performance=store_performance,
     )
+    return _filter_dashboard_permissions(report, membership, store_id)
+
+
+@router.get("/mobile-dashboard", response_model=DashboardReportOut)
+def mobile_dashboard_report(
+    store_id: str | None = Query(default=None),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    membership: Membership = Depends(get_business_membership),
+    db: Session = Depends(get_db),
+):
+    if membership.role != "owner" and "view_dashboard" not in (membership.permissions or []):
+        raise HTTPException(status_code=403, detail="You do not have permission to view the dashboard.")
+    return dashboard_report(store_id, start_date, end_date, membership, db)
 
 
 @router.get("/sales")

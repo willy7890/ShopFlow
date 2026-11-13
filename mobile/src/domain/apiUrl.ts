@@ -1,3 +1,7 @@
+export const PRODUCTION_API_BASE_URL = 'https://shopflow-u5q3.onrender.com/api/v1'
+
+const DEVELOPMENT_API_BASE_URL = 'http://127.0.0.1:8000/api/v1'
+
 export function normalizeApiBaseUrl(value: string): string {
   const parsed = new URL(value.trim())
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
@@ -14,14 +18,26 @@ export function normalizeApiBaseUrl(value: string): string {
   return parsed.toString().replace(/\/+$/, '')
 }
 
+export function defaultApiBaseUrl(isDevelopment: boolean, configuredValue?: string): string {
+  const configured = configuredValue?.trim()
+  const baseUrl = normalizeApiBaseUrl(
+    configured || (isDevelopment ? DEVELOPMENT_API_BASE_URL : PRODUCTION_API_BASE_URL),
+  )
+  if (!isDevelopment && baseUrl !== PRODUCTION_API_BASE_URL) {
+    throw new Error('Production builds must use the ShopFlow production API.')
+  }
+  return baseUrl
+}
+
 function isLocalAddress(hostname: string): boolean {
-  const host = hostname.toLowerCase()
-  if (host === 'localhost' || host === '::1' || host === '10.0.2.2') return true
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  if (host === 'localhost' || host === '::1' || host === '10.0.2.2' || host === '0.0.0.0') return true
   const parts = host.split('.').map(Number)
   if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
     return false
   }
-  return parts[0] === 10
+  return parts[0] === 127
+    || parts[0] === 10
     || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31)
     || (parts[0] === 192 && parts[1] === 168)
 }

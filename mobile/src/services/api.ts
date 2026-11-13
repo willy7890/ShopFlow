@@ -1,11 +1,12 @@
 import * as SecureStore from 'expo-secure-store'
 import type { SQLiteDatabase } from 'expo-sqlite'
-import { normalizeApiBaseUrl } from '../domain/apiUrl.ts'
+import { defaultApiBaseUrl, normalizeApiBaseUrl } from '../domain/apiUrl.ts'
 import type { Language } from '../i18n/translations.ts'
 
 const ACCESS_TOKEN_KEY = 'shopflow.api.access-token'
 const REFRESH_TOKEN_KEY = 'shopflow.api.refresh-token'
 const API_BASE_URL_KEY = 'api_base_url'
+const REQUEST_TIMEOUT_MS = 60_000
 
 export interface ApiTokenResponse {
   access_token: string
@@ -42,7 +43,7 @@ export interface BusinessAccess {
 }
 
 interface ApiErrorResponse {
-  detail?: string
+  detail?: string | { msg?: string }[]
 }
 
 export interface SyncPushResult {
@@ -68,6 +69,9 @@ let refreshInProgress: Promise<string | null> | null = null
 
 export async function saveApiBaseUrl(database: SQLiteDatabase, value: string): Promise<string> {
   const normalized = normalizeApiBaseUrl(value)
+  if (!__DEV__ && normalized !== defaultApiBaseUrl(false, process.env.EXPO_PUBLIC_API_URL)) {
+    throw new Error('Production builds must use the ShopFlow production API.')
+  }
   await database.runAsync(
     `INSERT INTO app_settings (setting_key, setting_value) VALUES (?, ?)
      ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value`,
@@ -78,12 +82,17 @@ export async function saveApiBaseUrl(database: SQLiteDatabase, value: string): P
 }
 
 export async function getApiBaseUrl(database: SQLiteDatabase): Promise<string> {
+  if (!__DEV__) {
+    return defaultApiBaseUrl(false, process.env.EXPO_PUBLIC_API_URL)
+  }
   const setting = await database.getFirstAsync<{ setting_value: string }>(
     'SELECT setting_value FROM app_settings WHERE setting_key = ?',
     API_BASE_URL_KEY,
   )
-  const configured = setting?.setting_value ?? process.env.EXPO_PUBLIC_API_URL ?? 'http://127.0.0.1:8000/api/v1'
-  return normalizeApiBaseUrl(configured)
+  return defaultApiBaseUrl(
+    true,
+    setting?.setting_value ?? process.env.EXPO_PUBLIC_API_URL,
+  )
 }
 
 export async function hasOnlineSession(): Promise<boolean> {
@@ -111,6 +120,7 @@ export async function registerOnline(
   input: {
     fullName: string
     email: string
+    phone?: string
     password: string
     businessName: string
     preferredLanguage: Language
@@ -122,6 +132,7 @@ export async function registerOnline(
     body: JSON.stringify({
       full_name: input.fullName.trim(),
       email: input.email.trim(),
+      phone: input.phone?.trim() || null,
       password: input.password,
       business_name: input.businessName.trim(),
       country_code: 'TZ',
@@ -182,12 +193,12 @@ async function request<T>(
     if (token) headers.set('Authorization', `Bearer ${token}`)
   }
 
-  let response = await fetch(url, { ...init, headers })
+  let response = await fetchWithTimeout(url, { ...init, headers })
   if (response.status === 401 && authenticated) {
     const accessToken = await refreshAccessToken(database)
     if (accessToken) {
       headers.set('Authorization', `Bearer ${accessToken}`)
-      response = await fetch(url, { ...init, headers })
+      response = await fetchWithTimeout(url, { ...init, headers })
     }
   }
 
@@ -197,6 +208,28 @@ async function request<T>(
   }
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController()
+  let timedOut = false
+  const timeout = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, REQUEST_TIMEOUT_MS)
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } catch (error) {
+    if (timedOut) {
+      throw new ApiError('ShopFlow API request timed out.', 0)
+    }
+    if (error instanceof TypeError) {
+      throw new ApiError('Network request failed', 0)
+    }
+    throw error
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
 async function refreshAccessToken(database: SQLiteDatabase): Promise<string | null> {
@@ -248,7 +281,12 @@ async function readErrorMessage(response: Response): Promise<string> {
   } catch {
     return `ShopFlow API request failed (${response.status}).`
   }
-  return typeof payload.detail === 'string'
-    ? payload.detail
-    : `ShopFlow API request failed (${response.status}).`
+  if (typeof payload.detail === 'string') return payload.detail
+  if (Array.isArray(payload.detail)) {
+    const messages = payload.detail
+      .map((item) => item.msg)
+      .filter((message): message is string => Boolean(message))
+    if (messages.length > 0) return messages.join(' ')
+  }
+  return `ShopFlow API request failed (${response.status}).`
 }

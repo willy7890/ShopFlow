@@ -341,9 +341,9 @@ export default function PosScreen() {
         visible={scannerOpen}
         onClose={() => setScannerOpen(false)}
         onScanned={(value) => {
-          setScannerOpen(false)
           void handleBarcodeInput(value)
         }}
+        continuous
       />
     </Screen>
   )

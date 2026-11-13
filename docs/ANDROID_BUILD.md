@@ -41,6 +41,15 @@ cd android
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
+The EAS `preview` and `production` profiles embed the ShopFlow Render API URL at build time. To rebuild an installable internal-test APK after changing mobile code:
+
+```bash
+cd mobile
+npx eas-cli build --platform android --profile preview
+```
+
+The `production` profile creates an Android App Bundle (AAB), not an APK. Release builds always use the production API; local development builds keep the emulator/localhost configuration.
+
 The debug APK is expected at `mobile/android/app/build/outputs/apk/debug/app-debug.apk` after a successful Gradle build. `expo start --android` launches a development session; it does not create an installable standalone APK.
 
 To copy the built APK onto a connected phone without installing it immediately:

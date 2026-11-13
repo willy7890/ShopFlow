@@ -44,6 +44,14 @@ def test_subscription_plans_bootstrap_entitlements_and_admin_audit(monkeypatch):
     profile = client.get("/api/v1/auth/me", headers={"Authorization": authorization})
     assert profile.status_code == 200
     assert profile.json()["is_super_admin"] is False
+    for endpoint in (
+        "/api/v1/subscriptions/admin/analytics",
+        "/api/v1/subscriptions/admin/businesses",
+        "/api/v1/subscriptions/admin/users",
+        "/api/v1/subscriptions/admin/audit-logs",
+    ):
+        denied = client.get(endpoint, headers={"Authorization": authorization})
+        assert denied.status_code == 403, denied.text
 
     bootstrap = client.post(
         "/api/v1/subscriptions/admin/bootstrap",
@@ -61,6 +69,26 @@ def test_subscription_plans_bootstrap_entitlements_and_admin_audit(monkeypatch):
         },
     )
     assert bootstrap.status_code == 200, bootstrap.text
+
+    admin_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": "StrongPass123!"},
+    )
+    assert admin_login.status_code == 200, admin_login.text
+    admin_authorization = "Bearer " + admin_login.json()["access_token"]
+    assert admin_login.json()["user"]["is_super_admin"] is True
+    verified_profile = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": admin_authorization},
+    )
+    assert verified_profile.status_code == 200
+    assert verified_profile.json()["email"] == email
+    assert verified_profile.json()["is_super_admin"] is True
+    platform_access = client.get(
+        "/api/v1/subscriptions/admin/analytics",
+        headers={"Authorization": admin_authorization},
+    )
+    assert platform_access.status_code == 200, platform_access.text
 
     admin_headers = {"Authorization": authorization}
     free_plan = client.post(

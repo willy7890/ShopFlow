@@ -28,10 +28,12 @@ const safeStorage = {
 
 interface AuthState {
   token: string | null
+  refreshToken: string | null
   me: Me | null
   expired: boolean
   storeId: string        // 'all' or a store id
-  setSession: (token: string, me: Me) => void
+  setSession: (token: string, me: Me, refreshToken?: string) => void
+  updateTokens: (token: string, refreshToken: string) => void
   setMe: (me: Me) => void
   setStore: (id: string) => void
   logout: () => void
@@ -44,19 +46,20 @@ interface AuthState {
 export const useAuth = create<AuthState>()(
   persist(
     (set, get) => ({
-      token: null, me: null, expired: false, storeId: 'all',
-      setSession: (token, me) => set({ token, me, storeId: 'all', expired: false }),
+      token: null, refreshToken: null, me: null, expired: false, storeId: 'all',
+      setSession: (token, me, refreshToken) => set({ token, refreshToken: refreshToken ?? null, me, storeId: 'all', expired: false }),
+      updateTokens: (token, refreshToken) => set({ token, refreshToken }),
       setMe: (me) => set({ me }),
       setStore: (storeId) => set({ storeId }),
-      logout: () => set({ token: null, me: null, expired: false }),
-      expire: () => set({ token: null, me: null, expired: true }),
+      logout: () => set({ token: null, refreshToken: null, me: null, expired: false }),
+      expire: () => set({ token: null, refreshToken: null, me: null, expired: true }),
       can: (p) => !!get().me?.user.permissions.includes(p),
       feature: (k) => !!get().me?.entitlements.features[k],
     }),
     {
       name: 'sf_auth',
       storage: createJSONStorage(() => safeStorage),
-      partialize: (s) => ({ token: s.token, me: s.me, storeId: s.storeId }),
+      partialize: (s) => ({ token: s.token, refreshToken: s.refreshToken, me: s.me, storeId: s.storeId }),
     },
   ),
 )

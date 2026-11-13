@@ -2,8 +2,65 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { formatTzs, multiplyMoney, parseTzsAmount } from '../src/domain/money.ts'
 import { cashSaleInput, productInput, workspaceInput } from '../src/domain/validation.ts'
-import { normalizeApiBaseUrl } from '../src/domain/apiUrl.ts'
+import {
+  defaultApiBaseUrl,
+  normalizeApiBaseUrl,
+  PRODUCTION_API_BASE_URL,
+} from '../src/domain/apiUrl.ts'
 import { buildInvoiceHtml } from '../src/domain/invoiceHtml.ts'
+import { dashboardMetrics } from '../src/domain/dashboard.ts'
+import { buildProductQrHtml, generateProductQr } from '../src/domain/productQr.ts'
+import { isPlatformAdmin, postLoginRoute } from '../src/domain/platformAdmin.ts'
+import { firstAuthIssue, validateOnlineLogin, validateOnlineRegistration } from '../src/domain/authValidation.ts'
+import { passwordVisibilityState, togglePasswordVisibility } from '../src/domain/passwordVisibility.ts'
+
+test('maps backend dashboard amounts and counts without losing report fields', () => {
+  assert.deepEqual(dashboardMetrics({
+    sales: { net_sales: '1240.50', total_transactions: 4 },
+    profit: { net_profit: '500.25' },
+    inventory: { total_quantity: '19', low_stock_items: [{}, {}] },
+    debtors: { total_outstanding: '350', customer_count: 2 },
+    suppliers: { total_payables: '120', supplier_count: 3 },
+    store_performance: [{ expense_total: '60', net_cash: '90' }],
+  }), {
+    salesTotal: 1241,
+    transactionCount: 4,
+    netProfit: 500,
+    stockQuantity: 19,
+    lowStockCount: 2,
+    customerDebt: 350,
+    customerCount: 2,
+    supplierPayable: 120,
+    supplierCount: 3,
+    expenses: 60,
+    netCash: 90,
+  })
+
+  test('generates a local QR matrix from SKU and safely formats a printable label', () => {
+    const qr = generateProductQr('TEA-250')
+    assert.ok(qr.size > 0)
+    assert.equal(qr.modules.length, qr.size * qr.size)
+    assert.throws(() => generateProductQr('  '), /SKU is required/)
+    const html = buildProductQrHtml({
+      title: 'QR code',
+      productName: '<Tea & Co>',
+      sku: 'TEA-250',
+      qr,
+    })
+    assert.ok(html.includes('<svg'))
+    assert.ok(html.includes('<path d="'))
+    assert.ok(html.includes('&lt;Tea &amp; Co&gt;'))
+    assert.ok(html.includes('TEA-250'))
+  })
+  assert.throws(() => dashboardMetrics({
+    sales: { net_sales: 'NaN', total_transactions: 0 },
+    profit: { net_profit: 0 },
+    inventory: { total_quantity: 0, low_stock_items: [] },
+    debtors: { total_outstanding: 0, customer_count: 0 },
+    suppliers: { total_payables: 0, supplier_count: 0 },
+    store_performance: [],
+  }), /invalid dashboard amount/)
+})
 
 test('parses only safe whole-TZS amounts', () => {
   assert.equal(parseTzsAmount('1,250'), 1250)
@@ -65,8 +122,90 @@ test('normalizes API URLs and rejects insecure non-local servers', () => {
   assert.equal(normalizeApiBaseUrl('https://api.example.com'), 'https://api.example.com/api/v1')
   assert.equal(normalizeApiBaseUrl('https://api.example.com/api/v1/'), 'https://api.example.com/api/v1')
   assert.equal(normalizeApiBaseUrl('http://10.0.2.2:8000'), 'http://10.0.2.2:8000/api/v1')
+  assert.equal(normalizeApiBaseUrl('http://127.0.0.1:8000'), 'http://127.0.0.1:8000/api/v1')
   assert.throws(() => normalizeApiBaseUrl('http://api.example.com'), /Use HTTPS/)
   assert.throws(() => normalizeApiBaseUrl('https://user:password@api.example.com'), /cannot contain credentials/)
+})
+
+test('selects a safe production API URL and keeps localhost development support', () => {
+  assert.equal(defaultApiBaseUrl(true), 'http://127.0.0.1:8000/api/v1')
+  assert.equal(defaultApiBaseUrl(true, 'http://10.0.2.2:8000'), 'http://10.0.2.2:8000/api/v1')
+  assert.equal(defaultApiBaseUrl(false), PRODUCTION_API_BASE_URL)
+  assert.equal(defaultApiBaseUrl(false, PRODUCTION_API_BASE_URL), PRODUCTION_API_BASE_URL)
+  assert.throws(() => defaultApiBaseUrl(false, 'http://127.0.0.1:8000'), /ShopFlow production API/)
+  assert.throws(() => defaultApiBaseUrl(false, 'https://api.example.com'), /ShopFlow production API/)
+})
+
+test('routes only the backend-confirmed super admin to platform administration', () => {
+  assert.equal(isPlatformAdmin({ is_super_admin: true }), true)
+  assert.equal(postLoginRoute({ is_super_admin: true }), '/platform-admin')
+  assert.equal(isPlatformAdmin({ is_super_admin: false }), false)
+  assert.equal(postLoginRoute({ is_super_admin: false }), '/businesses')
+  assert.equal(isPlatformAdmin(null), false)
+  assert.equal(isPlatformAdmin({ is_super_admin: 'true' }), false)
+})
+
+test('validates online login and registration using backend field limits', () => {
+  assert.deepEqual(validateOnlineLogin('', ''), [
+    { field: 'email', message: 'errors.emailRequired' },
+    { field: 'password', message: 'errors.onlinePasswordRequired' },
+  ])
+  assert.deepEqual(validateOnlineLogin('invalid', 'password123'), [
+    { field: 'email', message: 'errors.emailInvalid' },
+  ])
+
+  const valid = {
+    fullName: 'Asha Mushi',
+    email: 'asha@example.com',
+    phone: '+255700000000',
+    businessName: 'Asha Shop',
+    password: 'secure-password',
+    confirmPassword: 'secure-password',
+  }
+  assert.deepEqual(validateOnlineRegistration(valid), [])
+  assert.deepEqual(validateOnlineRegistration({ ...valid, confirmPassword: 'different' }), [
+    { field: 'confirmPassword', message: 'errors.passwordMismatch' },
+  ])
+  assert.deepEqual(validateOnlineRegistration({ ...valid, password: 'short', confirmPassword: 'short' }), [
+    { field: 'password', message: 'errors.onlinePasswordLength' },
+  ])
+  assert.deepEqual(validateOnlineRegistration({
+    ...valid,
+    fullName: 'A',
+    email: 'bad',
+    phone: '1'.repeat(33),
+    businessName: 'B',
+    password: 'x'.repeat(129),
+    confirmPassword: 'x'.repeat(129),
+  }), [
+    { field: 'fullName', message: 'errors.onlineFullName' },
+    { field: 'email', message: 'errors.emailInvalid' },
+    { field: 'phone', message: 'errors.phoneMax' },
+    { field: 'businessName', message: 'errors.onlineBusinessName' },
+    { field: 'password', message: 'errors.passwordMax' },
+  ])
+  assert.deepEqual(firstAuthIssue([
+    { field: 'email', message: 'errors.emailRequired' },
+    { field: 'email', message: 'errors.emailInvalid' },
+  ]), { email: 'errors.emailRequired' })
+})
+
+test('password visibility toggles independently between hidden and visible states', () => {
+  assert.deepEqual(passwordVisibilityState(false), {
+    secureTextEntry: true,
+    accessibilityLabel: 'auth.showPassword',
+  })
+  const visible = togglePasswordVisibility(false)
+  assert.equal(visible, true)
+  assert.deepEqual(passwordVisibilityState(visible), {
+    secureTextEntry: false,
+    accessibilityLabel: 'auth.hidePassword',
+  })
+  assert.equal(togglePasswordVisibility(visible), false)
+  assert.deepEqual(passwordVisibilityState(false), {
+    secureTextEntry: true,
+    accessibilityLabel: 'auth.showPassword',
+  })
 })
 
 test('validates workspace, product and unique sale lines', () => {

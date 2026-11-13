@@ -354,6 +354,24 @@ def list_sales(
     return query.order_by(Sale.created_at.desc()).all()
 
 
+@router.get("/recent", response_model=list[SaleOut])
+def list_recent_sales(
+    store_id: str | None = Query(default=None),
+    limit: int = Query(default=10, ge=1, le=50),
+    membership: Membership = Depends(get_business_membership),
+    db: Session = Depends(get_db),
+):
+    if membership.role != "owner" and "manage_sales" not in (membership.permissions or []):
+        raise HTTPException(status_code=403, detail="You do not have permission to view sales.")
+    query = db.query(Sale).filter(Sale.business_id == membership.business_id)
+    if store_id:
+        _ensure_store_access(membership, store_id, db)
+        query = query.filter(Sale.store_id == store_id)
+    elif membership.role != "owner":
+        query = query.filter(Sale.store_id.in_(membership.store_access or []))
+    return query.order_by(Sale.created_at.desc()).limit(limit).all()
+
+
 @router.get("/{sale_id}", response_model=SaleOut)
 def get_sale(
     sale_id: str,

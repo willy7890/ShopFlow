@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite'
 import type { Workspace } from './workspace.ts'
-import { assertActiveWorkspace, assertPermission } from './workspace.ts'
+import { assertActiveWorkspace, assertAnyPermission, assertPermission } from './workspace.ts'
 
 export type CashbookEntryType = 'income' | 'expense'
 export type CashbookSource = 'manual' | 'sale' | 'customer_collection' | 'supplier_payment'
@@ -65,7 +65,7 @@ export async function recordOpeningBalance(
   input: { entryType: CashbookEntryType; amountMinor: number; note: string },
   createId: () => string,
 ): Promise<void> {
-  await assertPermission(database, workspace, 'manage_settings')
+  await assertAnyPermission(database, workspace, ['manage_settings', 'manage_finance'])
   if (!Number.isSafeInteger(input.amountMinor) || input.amountMinor <= 0) {
     throw new Error('Opening balance must be a positive whole TZS amount.')
   }
@@ -98,7 +98,7 @@ export async function reconcileCashbook(
   note: string,
   createId: () => string,
 ): Promise<number> {
-  await assertPermission(database, workspace, 'manage_settings')
+  await assertAnyPermission(database, workspace, ['manage_settings', 'manage_finance'])
   if (!Number.isSafeInteger(countedBalanceMinor) || countedBalanceMinor < 0) {
     throw new Error('Counted cash must be a non-negative whole TZS amount.')
   }
@@ -202,7 +202,7 @@ async function assertCashbookPermission(
     `SELECT 1 AS allowed
      FROM user_store_permissions
      WHERE business_id = ? AND store_id = ? AND user_id = ?
-       AND permission IN ('sell', 'manage_inventory', 'view_reports', 'manage_settings')
+       AND permission IN ('sell', 'manage_inventory', 'view_reports', 'manage_settings', 'manage_finance')
      LIMIT 1`,
     workspace.businessId,
     workspace.storeId,
@@ -219,7 +219,10 @@ export async function createManualCashbookEntry(
   input: { entryType: CashbookEntryType; category: string; amountMinor: number; note: string },
   createId: () => string,
 ): Promise<void> {
-  await assertPermission(database, workspace, input.entryType === 'income' ? 'sell' : 'manage_inventory')
+  await assertAnyPermission(database, workspace, [
+    'manage_finance',
+    input.entryType === 'income' ? 'sell' : 'manage_inventory',
+  ])
   const category = input.category.trim()
   const note = input.note.trim()
   if (!['income', 'expense'].includes(input.entryType)) throw new Error('Choose income or expense.')

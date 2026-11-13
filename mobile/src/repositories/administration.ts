@@ -31,6 +31,7 @@ export interface LocalPreferences {
 const PERMISSIONS: Permission[] = [
   'manage_business', 'manage_stores', 'manage_employees', 'manage_products',
   'manage_inventory', 'sell', 'view_reports', 'manage_settings',
+  'view_dashboard', 'manage_finance', 'manage_customers', 'manage_suppliers',
 ]
 
 export async function createStore(

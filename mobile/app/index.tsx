@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 import { useRouter, type Href } from 'expo-router'
 import { useSQLiteContext } from 'expo-sqlite'
 import { LoadingState, Screen } from '@/src/components/NativeUi'
-import { getLoginState, restoreLocalWorkspace } from '@/src/repositories/workspace'
+import { restoreLocalWorkspace } from '@/src/repositories/workspace'
 import { fetchBusinessAccess, fetchCurrentUser, hasOnlineSession } from '@/src/services/api'
+import { postLoginRoute } from '@/src/domain/platformAdmin'
 import { useI18n } from '@/src/i18n/I18nProvider'
 
 export default function EntryScreen() {
@@ -18,7 +19,12 @@ export default function EntryScreen() {
       try {
         if (await hasOnlineSession()) {
           try {
-            await Promise.all([fetchCurrentUser(database), fetchBusinessAccess(database)])
+            const user = await fetchCurrentUser(database)
+            if (postLoginRoute(user) === '/platform-admin') {
+              if (active) router.replace('/platform-admin' as Href)
+              return
+            }
+            await fetchBusinessAccess(database)
             if (active) router.replace('/businesses' as Href)
             return
           } catch (reason) {
@@ -32,8 +38,7 @@ export default function EntryScreen() {
           }
         }
         await restoreLocalWorkspace(database)
-        const state = await getLoginState(database)
-        if (active) router.replace(state.hasBusiness ? '/login' : '/setup')
+        if (active) router.replace('/welcome')
       } catch (reason) {
         if (active) setMessage(localizeError(reason, 'dashboard.stockError'))
       }

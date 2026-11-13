@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { useFocusEffect, useRouter } from 'expo-router'
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
 import { useSQLiteContext } from 'expo-sqlite'
 import { Text } from 'react-native'
 import { Button, Card, LoadingState, PageTitle, Screen } from '@/src/components/NativeUi'
@@ -23,6 +23,7 @@ export default function BusinessesScreen() {
   const { language, t, error: localizeError } = useI18n()
   const database = useSQLiteContext()
   const router = useRouter()
+  const { notice } = useLocalSearchParams<{ notice?: string }>()
   const [businesses, setBusinesses] = useState<BusinessAccess[]>([])
   const [user, setUser] = useState<ApiUser | null>(null)
   const [loading, setLoading] = useState(true)
@@ -96,6 +97,9 @@ export default function BusinessesScreen() {
         title={t('businesses.title')}
         subtitle={user ? t('businesses.signedIn', { name: user.full_name }) : t('businesses.subtitle')}
       />
+      {typeof notice === 'string' && notice ? (
+        <Text style={{ color: colors.accentPressed, fontWeight: '600' }}>{notice}</Text>
+      ) : null}
       <Card>
         <Text style={{ color: colors.muted }}>
           {t('businesses.syncNotice')}

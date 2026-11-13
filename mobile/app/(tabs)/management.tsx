@@ -35,6 +35,7 @@ import { translateRole, type TranslationKey } from '@/src/i18n/translations'
 const PERMISSIONS: Permission[] = [
   'manage_business', 'manage_stores', 'manage_employees', 'manage_products',
   'manage_inventory', 'sell', 'view_reports', 'manage_settings',
+  'view_dashboard', 'manage_finance', 'manage_customers', 'manage_suppliers',
 ]
 const ROLES: EmployeeRole[] = ['manager', 'store_manager', 'cashier', 'accountant', 'inventory_manager']
 
@@ -334,7 +335,10 @@ export default function ManagementScreen() {
   return (
     <Screen>
       <PageTitle title={t('management.title')} subtitle={t('management.subtitle', { name: workspace.userName, role: translateRole(language, workspace.role) })} />
-      {allowedPermissions.includes('sell') || allowedPermissions.includes('manage_inventory') ? (
+      {allowedPermissions.includes('sell')
+        || allowedPermissions.includes('manage_inventory')
+        || allowedPermissions.includes('manage_customers')
+        || allowedPermissions.includes('manage_suppliers') ? (
         <Button label={t('accounts.open')} secondary onPress={() => router.push('/accounts')} />
       ) : null}
       {allowedPermissions.includes('sell') || allowedPermissions.includes('view_reports') ? (
@@ -343,7 +347,10 @@ export default function ManagementScreen() {
       {allowedPermissions.includes('manage_settings') ? (
         <Button label={t('syncQueue.open')} secondary onPress={() => router.push('./sync')} />
       ) : null}
-      {allowedPermissions.includes('sell') || allowedPermissions.includes('manage_inventory') || allowedPermissions.includes('view_reports') ? (
+      {allowedPermissions.includes('sell')
+        || allowedPermissions.includes('manage_inventory')
+        || allowedPermissions.includes('manage_finance')
+        || allowedPermissions.includes('view_reports') ? (
         <Button label={t('cashbook.open')} secondary onPress={() => router.push('/cashbook')} />
       ) : null}
       <Button

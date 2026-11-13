@@ -86,18 +86,30 @@ export async function findProductByBarcode(
   workspace: Workspace,
   barcode: string,
 ): Promise<LocalProduct | null> {
+  return findProductByCode(database, workspace, barcode)
+}
+
+export async function findProductByCode(
+  database: SQLiteDatabase,
+  workspace: Workspace,
+  code: string,
+): Promise<LocalProduct | null> {
   await assertActiveWorkspace(database, workspace)
-  const normalizedBarcode = barcode.trim()
-  if (!normalizedBarcode) return null
+  const normalizedCode = code.trim()
+  if (!normalizedCode) return null
   return database.getFirstAsync<LocalProduct>(
-    productQuery(`AND COALESCE(product_variants.barcode, CASE
-      WHEN (SELECT COUNT(*) FROM product_variants AS sibling
-            WHERE sibling.product_id = products.id) = 1 THEN products.barcode
-      ELSE NULL
-    END) = ? COLLATE NOCASE`),
+    productQuery(`AND (
+      product_variants.sku = ? COLLATE NOCASE
+      OR COALESCE(product_variants.barcode, CASE
+        WHEN (SELECT COUNT(*) FROM product_variants AS sibling
+              WHERE sibling.product_id = products.id) = 1 THEN products.barcode
+        ELSE NULL
+      END) = ? COLLATE NOCASE
+    )`),
     workspace.storeId,
     workspace.businessId,
-    normalizedBarcode,
+    normalizedCode,
+    normalizedCode,
   )
 }
 
@@ -175,13 +187,22 @@ async function validateUniqueCodes(
 ): Promise<void> {
   const skuExists = await database.getFirstAsync<{ id: string }>(
     `SELECT id FROM product_variants
-     WHERE business_id = ? AND sku = ? COLLATE NOCASE
-       AND product_id != COALESCE(?, '') LIMIT 1`,
+     WHERE business_id = ? AND (sku = ? COLLATE NOCASE OR barcode = ? COLLATE NOCASE)
+       AND product_id != COALESCE(?, '')
+     UNION ALL
+     SELECT id FROM products
+     WHERE business_id = ? AND barcode = ? COLLATE NOCASE
+       AND id != COALESCE(?, '')
+     LIMIT 1`,
+    businessId,
+    sku.trim(),
+    sku.trim(),
+    exceptProductId ?? '',
     businessId,
     sku.trim(),
     exceptProductId ?? '',
   )
-  if (skuExists) throw new Error('That SKU is already in use. Choose another SKU.')
+  if (skuExists) throw new Error('That product code is already assigned to another product.')
   if (barcode?.trim()) {
     const barcodeExists = await database.getFirstAsync<{ id: string }>(
       `SELECT id FROM products
@@ -189,7 +210,7 @@ async function validateUniqueCodes(
          AND id != COALESCE(?, '')
        UNION ALL
        SELECT id FROM product_variants
-       WHERE business_id = ? AND barcode = ? COLLATE NOCASE
+       WHERE business_id = ? AND (barcode = ? COLLATE NOCASE OR sku = ? COLLATE NOCASE)
          AND product_id != COALESCE(?, '')
        LIMIT 1`,
       businessId,
@@ -197,9 +218,10 @@ async function validateUniqueCodes(
       exceptProductId ?? '',
       businessId,
       barcode.trim(),
+      barcode.trim(),
       exceptProductId ?? '',
     )
-    if (barcodeExists) throw new Error('That barcode is already assigned to another product or variant.')
+    if (barcodeExists) throw new Error('That product code is already assigned to another product.')
   }
 }
 

@@ -31,9 +31,11 @@ function RootStack() {
         }}
       >
         <Stack.Screen name="index" />
+        <Stack.Screen name="welcome" />
         <Stack.Screen name="setup" />
         <Stack.Screen name="login" />
         <Stack.Screen name="businesses" />
+        <Stack.Screen name="platform-admin" />
         <Stack.Screen name="(tabs)" />
       </Stack>
       <ThemeToggle />

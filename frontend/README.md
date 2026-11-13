@@ -8,8 +8,7 @@ npm install
 cp .env.example .env      # already present as .env
 npm run dev               # http://localhost:5173
 ```
-Start the backend from `../backend` with `uvicorn app.main:app --reload`, then register a user or sign in with a backend account. Set `VITE_USE_MOCK=true` in `.env` to use the in-memory demo instead.
-Tip: an email starting with a role (`cashier@x.com`, `accountant@x.com`, `invmgr@x.com`, `storemgr@x.com`, `manager@x.com`) signs you in with that role so you can see permission-based menus.
+Start the backend from `../backend` with `uvicorn app.main:app --reload`, then register a user or sign in with a backend account. The browser app uses FastAPI; in-memory fixtures are only selected in the test build.
 
 ## Scripts
 | Command | What it does |
@@ -21,8 +20,8 @@ Tip: an email starting with a role (`cashier@x.com`, `accountant@x.com`, `invmgr
 | `npm run preview` | Serve the production build locally |
 
 ## Connect the real FastAPI backend
-1. Set `VITE_API_BASE_URL=http://localhost:8000/api/v1` and `VITE_USE_MOCK=false` in `.env` (`.env.example` defaults to the real backend).
-2. The real adapter maps auth/business context, reports, customers, supplier balances, payments, and purchases to their FastAPI endpoints in `src/api/http.ts`. The Axios client sends the active `X-Business-ID` and bearer token automatically.
+1. Set `VITE_API_BASE_URL=http://127.0.0.1:8000/api/v1` in `.env` (`.env.example` is the local development default). Set it to the deployed FastAPI URL when building for production; production builds must not use a localhost URL.
+2. The REST adapter maps frontend operations to FastAPI endpoints in `src/api/http.ts`. The Axios client sends the active `X-Business-ID` and bearer token automatically and rotates access/refresh tokens after an expired access token.
 3. The UI contract is `src/api/api.ts` (`Api` interface) with types in `src/api/types.ts`. The mock (`src/api/mock.ts`) documents the rules the backend must enforce:
    - `GET /auth/me` must return `{ user{role,permissions[]}, business, stores[], entitlements{features{},limits{}} }`. **Menus, guards and plan limits come only from this payload.**
    - Stock changes only through sales, purchases, restocks and adjustments (never direct edits).
@@ -51,17 +50,17 @@ This Vite application is the existing browser frontend and is retained for compa
 ## Module status (be honest with yourself before shipping)
 | Area | Status |
 |---|---|
-| Auth (login, register, forgot, reset, session expiry), 6-step onboarding | Built (against mock) |
+| Auth (login, register, session expiry), 6-step onboarding | Connected to FastAPI; password recovery endpoints are not implemented |
 | Shell: sidebar (19 modules), store selector, language/theme, offline pill, mobile bottom nav, permission + plan + mode gating | Built |
-| Dashboard, Products (variants, photo, barcode scan, quick **+ Mzigo** restock), Categories (tree), Inventory (stock, movements, adjustments) | Built |
+| Dashboard, Products (variants, photo, barcode scan, quick **+ Mzigo** restock), Categories (tree), Inventory (stock, movements, adjustments) | Mixed: reads use FastAPI; some writes still need backend routes |
 | POS (barcode/camera scan, tiles, discounts, split payments, receipt print/share), Quick Sales, Sales + Payments, Invoices (void) | Built |
-| Customers, Debts (aging), Suppliers, Purchases (pack → unit conversion), Expenses, Cashbook, Reports | Built |
-| AI assistant UI | Built; **answers come from a rule-based mock**, wire `api.ai.ask` to a real model |
+| Customers, Debts (aging), Suppliers, Purchases (pack → unit conversion), Expenses, Cashbook, Reports | Reads and supported writes use FastAPI; expense posting uses cashbook entries |
+| AI assistant UI | Connected to the configured backend assistant provider; backend returns an explicit error when no provider is configured |
 | Offline queue, sync, conflict review | Built; queue persists in IndexedDB. Only **sales** are queued offline |
 | Employees, Stores, Subscription, Settings | Built; see gaps |
 
 ### Known gaps / TODO
-- **Not verified in a real browser by the author.** Type-check, production build and 34 jsdom tests pass; visual QA, camera scanning on real phones and printing still need manual testing. These checks do not verify the native Android app or an APK.
+- Live API health, OpenAPI, login routing and CORS preflight were checked locally. Visual QA, camera scanning on real phones and printing still need manual testing.
 - Camera scanning uses native `BarcodeDetector` (Chrome/Android) with a ZXing fallback; test on your target devices.
 - Offline: only sales are queued; other writes need a connection. Catalog cache is in TanStack Query memory (add `persistQueryClient` for a cold-start offline catalog).
 - Reports and dashboard assume backend-calculated figures; the UI labels estimates as estimates.

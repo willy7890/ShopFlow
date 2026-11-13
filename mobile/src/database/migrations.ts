@@ -439,6 +439,41 @@ CREATE INDEX idx_sale_refunds_store_created
   ON sale_refunds(business_id, store_id, created_at DESC);
 `
 
+const PHASE_TWELVE_SCHEMA = `
+CREATE TABLE user_store_permissions_v12 (
+  business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  store_id TEXT NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  permission TEXT NOT NULL CHECK (permission IN (
+    'manage_business', 'manage_stores', 'manage_employees', 'manage_products',
+    'manage_inventory', 'sell', 'view_reports', 'manage_settings', 'view_dashboard',
+    'manage_finance', 'manage_customers', 'manage_suppliers'
+  )),
+  PRIMARY KEY (user_id, store_id, permission)
+);
+
+INSERT INTO user_store_permissions_v12 (business_id, user_id, store_id, permission)
+SELECT business_id, user_id, store_id, permission FROM user_store_permissions;
+
+DROP TABLE user_store_permissions;
+ALTER TABLE user_store_permissions_v12 RENAME TO user_store_permissions;
+CREATE INDEX idx_user_store_permissions_scope
+  ON user_store_permissions(business_id, store_id, user_id);
+
+INSERT OR IGNORE INTO user_store_permissions (business_id, user_id, store_id, permission)
+SELECT businesses.id, users.id, stores.id, permissions.permission
+FROM users
+JOIN businesses ON businesses.id = users.business_id
+JOIN stores ON stores.business_id = businesses.id AND stores.is_active = 1
+CROSS JOIN (
+  SELECT 'view_dashboard' AS permission
+  UNION ALL SELECT 'manage_finance'
+  UNION ALL SELECT 'manage_customers'
+  UNION ALL SELECT 'manage_suppliers'
+) AS permissions
+WHERE users.role = 'owner';
+`
+
 export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {
   await database.execAsync('PRAGMA foreign_keys = ON;')
 
@@ -446,7 +481,7 @@ export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {
     'PRAGMA user_version',
   ) ?? { user_version: 0 }
 
-  if (currentVersion > 11) {
+  if (currentVersion > 12) {
     throw new Error(`Database version ${currentVersion} is newer than this application supports.`)
   }
 
@@ -524,6 +559,13 @@ export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {
     await database.withExclusiveTransactionAsync(async (transaction) => {
       await transaction.execAsync(PHASE_ELEVEN_SCHEMA)
       await transaction.execAsync('PRAGMA user_version = 11;')
+    })
+  }
+
+  if (currentVersion < 12) {
+    await database.withExclusiveTransactionAsync(async (transaction) => {
+      await transaction.execAsync(PHASE_TWELVE_SCHEMA)
+      await transaction.execAsync('PRAGMA user_version = 12;')
     })
   }
 }

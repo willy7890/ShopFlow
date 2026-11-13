@@ -19,11 +19,11 @@ export interface Report {
   best: { name: string; qty: number }[]; slow: { name: string; stock: number }[]
 }
 
-/** The single contract between the UI and the backend. Implemented by api/http.ts (real) and api/mock.ts (development). */
+/** The single UI contract. Production uses FastAPI; mock.ts is reserved for isolated tests. */
 export interface Api {
   auth: {
-    login(email: string, password: string): Promise<{ token: string; me: T.Me }>
-    register(d: { name: string; email: string; password: string }): Promise<{ token: string; me: T.Me }>
+    login(email: string, password: string): Promise<{ token: string; refreshToken?: string; me: T.Me }>
+    register(d: { name: string; email: string; password: string }): Promise<{ token: string; refreshToken?: string; me: T.Me }>
     forgot(email: string): Promise<void>
     reset(token: string, password: string): Promise<void>
     me(): Promise<T.Me>
@@ -42,7 +42,7 @@ export interface Api {
     purchases(): Promise<T.Purchase[]>; createPurchase(p: T.PurchasePayload): Promise<T.Purchase>
   }
   finance: {
-    expenses(): Promise<T.Expense[]>; saveExpense(e: Omit<T.Expense, 'id'> & { id?: number }): Promise<T.Expense>
+    expenses(): Promise<T.Expense[]>; saveExpense(e: Omit<T.Expense, 'id'> & { id?: string | number }): Promise<T.Expense>
     cashbook(): Promise<T.CashEntry[]>
     dashboard(period: string, storeId: string): Promise<T.Dashboard>
     report(from: string, to: string, group: 'day' | 'week' | 'month' | 'year'): Promise<Report>
