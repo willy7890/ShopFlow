@@ -1,11 +1,16 @@
+
 import { z } from 'zod'
 
 export const workspaceInput = z.object({
   ownerName: z.string().trim().min(2, 'Enter the owner name.').max(160, 'Name must be at most 160 characters.'),
-  ownerUsername: z.string().trim().min(3, 'Username must be at least 3 characters.').max(40, 'Username must be at most 40 characters.')
-    .regex(/^[a-zA-Z0-9._-]+$/, 'Use letters, numbers, dots, underscores or hyphens for the username.'),
+
+  // Allow usernames with spaces and special characters.
+  ownerUsername: z.string().trim().min(1, 'Enter a username.').max(80, 'Username must be at most 80 characters.'),
+
   ownerPassword: z.string().min(8, 'Password must be at least 8 characters.').max(128, 'Password must be at most 128 characters.'),
+
   businessName: z.string().trim().min(2, 'Enter the business name.').max(180, 'Business name must be at most 180 characters.'),
+
   storeName: z.string().trim().min(2, 'Enter the store name.').max(180, 'Store name must be at most 180 characters.'),
 })
 
@@ -21,19 +26,36 @@ export const productInput = z.object({
   lowStockThreshold: z.number().int().safe().nonnegative('Threshold cannot be negative.'),
 })
 
-export const employeeRole = z.enum(['manager', 'store_manager', 'cashier', 'accountant', 'inventory_manager'])
+export const employeeRole = z.enum([
+  'manager',
+  'store_manager',
+  'cashier',
+  'accountant',
+  'inventory_manager',
+])
 
 export const employeeInput = z.object({
   displayName: z.string().trim().min(2, 'Enter the employee name.').max(160, 'Name must be at most 160 characters.'),
-  username: z.string().trim().min(3, 'Username must be at least 3 characters.').max(40, 'Username must be at most 40 characters.')
-    .regex(/^[a-zA-Z0-9._-]+$/, 'Use letters, numbers, dots, underscores or hyphens for the username.'),
+
+  // Employee usernames also accept spaces and special characters.
+  username: z.string().trim().min(1, 'Enter a username.').max(80, 'Username must be at most 80 characters.'),
+
   password: z.string().min(8, 'Password must be at least 8 characters.').max(128, 'Password must be at most 128 characters.'),
   role: employeeRole,
   storeIds: z.array(z.string().uuid()).min(1, 'Assign the employee to at least one store.'),
   permissions: z.array(z.enum([
-    'manage_business', 'manage_stores', 'manage_employees', 'manage_products',
-    'manage_inventory', 'sell', 'view_reports', 'manage_settings',
-    'view_dashboard', 'manage_finance', 'manage_customers', 'manage_suppliers',
+    'manage_business',
+    'manage_stores',
+    'manage_employees',
+    'manage_products',
+    'manage_inventory',
+    'sell',
+    'view_reports',
+    'manage_settings',
+    'view_dashboard',
+    'manage_finance',
+    'manage_customers',
+    'manage_suppliers',
   ])).min(1, 'Choose at least one permission.'),
 })
 

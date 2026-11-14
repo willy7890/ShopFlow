@@ -3,6 +3,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from app.main import app
+from auth_test_support import register_verified_account
 
 client = TestClient(app)
 
@@ -10,17 +11,13 @@ client = TestClient(app)
 def _register_owner():
     test_id = uuid4().hex
     email = f"finance-{test_id}@example.com"
-    response = client.post(
-        "/api/v1/auth/register",
-        json={
-            "full_name": "Finance Clerk",
-            "email": email,
-            "password": "StrongPass123!",
-            "business_name": f"Finance Shop {test_id}",
-        },
+    payload, _ = register_verified_account(
+        client,
+        full_name="Finance Clerk",
+        email=email,
+        password="StrongPass123!",
+        business_name=f"Finance Shop {test_id}",
     )
-    assert response.status_code == 201, response.text
-    payload = response.json()
     business_response = client.get(
         "/api/v1/businesses",
         headers={"Authorization": f"Bearer {payload['access_token']}"},
@@ -102,6 +99,13 @@ def test_customer_debtor_and_supplier_creditor_flows():
     )
     assert customer.status_code == 201, customer.text
     customer_id = customer.json()["id"]
+    customer_with_email = client.post(
+        "/api/v1/customers",
+        json={"name": "Email Customer", "email": "customer@example.com"},
+        headers=headers,
+    )
+    assert customer_with_email.status_code == 201, customer_with_email.text
+    assert customer_with_email.json()["email"] == "customer@example.com"
 
     sale = client.post(
         "/api/v1/sales",
@@ -137,12 +141,21 @@ def test_customer_debtor_and_supplier_creditor_flows():
     )
     assert unverified_customer_payment.status_code == 409, unverified_customer_payment.text
 
-    customer_payment = client.post(
+    first_customer_payment = client.post(
         f"/api/v1/customers/{customer_id}/payments",
-        json={"amount": "2500", "method": "cash", "reference": "CUST-001"},
+        json={"amount": "1000", "method": "cash", "reference": "CUST-001"},
         headers=headers,
     )
-    assert customer_payment.status_code == 201, customer_payment.text
+    assert first_customer_payment.status_code == 201, first_customer_payment.text
+    partial_statement = client.get(f"/api/v1/customers/{customer_id}/statement", headers=headers)
+    assert partial_statement.status_code == 200, partial_statement.text
+    assert partial_statement.json()["outstanding_balance"] == "1500.00"
+    second_customer_payment = client.post(
+        f"/api/v1/customers/{customer_id}/payments",
+        json={"amount": "1500", "method": "cash", "reference": "CUST-002"},
+        headers=headers,
+    )
+    assert second_customer_payment.status_code == 201, second_customer_payment.text
 
     final_statement = client.get(f"/api/v1/customers/{customer_id}/statement", headers=headers)
     assert final_statement.status_code == 200, final_statement.text

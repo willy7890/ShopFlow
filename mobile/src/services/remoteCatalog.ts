@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite'
+import { withDatabaseTransaction } from '../database/transactions.ts'
 import { authenticatedApiRequest } from './api.ts'
 
 interface RemoteCategory {
@@ -87,7 +88,7 @@ export async function downloadRemoteCatalog(
   ]))
   const now = new Date().toISOString()
 
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     await transaction.runAsync(
       `UPDATE product_variants SET is_active = 0
        WHERE business_id = ? AND remote_catalog = 1`,
@@ -247,7 +248,7 @@ export async function refreshRemoteStock(
   ]))
   const now = new Date().toISOString()
 
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     const pendingLines = await transaction.getAllAsync<{ payload_json: string }>(
       `SELECT payload_json FROM outbox
        WHERE business_id = ? AND entity_type = 'sale' AND status != 'synced'`,

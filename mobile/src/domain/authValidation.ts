@@ -10,10 +10,17 @@ export interface AuthValidationIssue {
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+export function validateEmailAddress(email: string): TranslationKey | null {
+  const normalized = email.trim()
+  if (!normalized) return 'errors.emailRequired'
+  if (!emailPattern.test(normalized)) return 'errors.emailInvalid'
+  return null
+}
+
 export function validateOnlineLogin(email: string, password: string): AuthValidationIssue[] {
   const issues: AuthValidationIssue[] = []
-  if (!email.trim()) issues.push({ field: 'email', message: 'errors.emailRequired' })
-  else if (!emailPattern.test(email.trim())) issues.push({ field: 'email', message: 'errors.emailInvalid' })
+  const emailError = validateEmailAddress(email)
+  if (emailError) issues.push({ field: 'email', message: emailError })
   if (!password) issues.push({ field: 'password', message: 'errors.onlinePasswordRequired' })
   return issues
 }
@@ -34,16 +41,16 @@ export function validateOnlineRegistration(input: {
   if (fullName.length < 2) issues.push({ field: 'fullName', message: 'errors.onlineFullName' })
   else if (fullName.length > 160) issues.push({ field: 'fullName', message: 'errors.nameMax' })
 
-  if (!email) issues.push({ field: 'email', message: 'errors.emailRequired' })
-  else if (!emailPattern.test(email)) issues.push({ field: 'email', message: 'errors.emailInvalid' })
+  const emailError = validateEmailAddress(email)
+  if (emailError) issues.push({ field: 'email', message: emailError })
 
   if (input.phone.trim().length > 32) issues.push({ field: 'phone', message: 'errors.phoneMax' })
 
   if (businessName.length < 2) issues.push({ field: 'businessName', message: 'errors.onlineBusinessName' })
   else if (businessName.length > 180) issues.push({ field: 'businessName', message: 'errors.businessMax' })
 
-  if (input.password.length < 8) issues.push({ field: 'password', message: 'errors.onlinePasswordLength' })
-  else if (input.password.length > 128) issues.push({ field: 'password', message: 'errors.passwordMax' })
+  if (input.password.length > 128) issues.push({ field: 'password', message: 'errors.passwordMax' })
+  else if (input.password.length < 12 || !/[a-z]/.test(input.password) || !/[A-Z]/.test(input.password) || !/\d/.test(input.password) || !/[^A-Za-z0-9]/.test(input.password)) issues.push({ field: 'password', message: 'errors.onlinePasswordLength' })
 
   if (!input.confirmPassword) issues.push({ field: 'confirmPassword', message: 'errors.confirmPasswordRequired' })
   else if (input.password !== input.confirmPassword) {

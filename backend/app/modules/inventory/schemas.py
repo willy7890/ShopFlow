@@ -87,5 +87,5 @@ class BalanceOut(BaseModel):
 class StockMovementOut(BaseModel):
     id: str; store_id: str; variant_id: str; movement_type: str
     quantity_delta: Decimal; unit_cost: Decimal; reference_type: str | None; reference_id: str | None
-    note: str | None
+    note: str | None; created_at: datetime
     model_config = ConfigDict(from_attributes=True)

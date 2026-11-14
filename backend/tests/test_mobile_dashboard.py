@@ -5,23 +5,21 @@ from fastapi.testclient import TestClient
 from app.core.database import SessionLocal
 from app.main import app
 from app.modules.businesses.models import Membership
+from auth_test_support import register_verified_account
 
 client = TestClient(app)
 
 
 def test_mobile_dashboard_and_recent_sales_follow_member_permissions():
     test_id = uuid4().hex
-    response = client.post(
-        "/api/v1/auth/register",
-        json={
-            "full_name": "Mobile Dashboard Owner",
-            "email": f"mobile-dashboard-{test_id}@example.com",
-            "password": "StrongPass123!",
-            "business_name": f"Mobile Dashboard Shop {test_id}",
-        },
+    session, _ = register_verified_account(
+        client,
+        full_name="Mobile Dashboard Owner",
+        email=f"mobile-dashboard-{test_id}@example.com",
+        password="StrongPass123!",
+        business_name=f"Mobile Dashboard Shop {test_id}",
     )
-    assert response.status_code == 201, response.text
-    token = response.json()["access_token"]
+    token = session["access_token"]
     access_response = client.get(
         "/api/v1/businesses/access",
         headers={"Authorization": f"Bearer {token}"},

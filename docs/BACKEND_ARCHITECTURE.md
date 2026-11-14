@@ -90,7 +90,7 @@ Later priorities remain as future work and are intentionally separated from the 
 - Subscription plan prices, currencies, durations and feature maps are configured by a bootstrapped Super Admin; no prices or tiers are fabricated or seeded.
 - A free plan becomes active on request. Paid plans stay pending because the Vodacom payment provider is not yet integrated; administrative grants are separate, require a reason and create audit entries without claiming payment.
 - Business subscription rows are retained as history. Replacements mark previous active rows superseded rather than overwriting them.
-- Entitlements are the active plan feature map merged with business-specific overrides. Tenants without a configured subscription are not blocked from existing APIs.
+- Mapped tenant business endpoints require a current active or trial subscription and the mapped plan feature. Pre-rollout subscriptions stay in legacy access mode until a Super Admin reviews the plan and explicitly applies enforcement; existing plan rows start unconfigured and cannot be assigned to new subscriptions until reviewed. Trusted Super Admin business access bypasses subscription entitlements.
 - The bootstrap route requires both an authenticated account matching `SUPER_ADMIN_EMAIL` and a constant-time checked secret. Email matching during registration never elevates privileges.
 - Platform user, business, store, plan, and grant operations are protected by the Super Admin flag and recorded in the platform audit log where they change state.
 

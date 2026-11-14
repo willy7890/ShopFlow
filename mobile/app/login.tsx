@@ -13,7 +13,7 @@ import {
   PasswordField,
   Screen,
 } from '@/src/components/NativeUi'
-import { firstAuthIssue, validateOnlineLogin, validateOnlineRegistration } from '@/src/domain/authValidation'
+import { firstAuthIssue, validateEmailAddress, validateOnlineLogin, validateOnlineRegistration } from '@/src/domain/authValidation'
 import {
   authenticateUser,
   getLoginState,
@@ -24,7 +24,11 @@ import {
   fetchCurrentUser,
   getApiBaseUrl,
   loginOnline,
+  fetchBusinessAccess,
+  fetchSubscriptionHistory,
+  requestPasswordReset,
   registerOnline,
+  resendVerificationEmail,
 } from '@/src/services/api'
 import { useTheme, type ThemeColors } from '@/src/theme/colors'
 import { useI18n } from '@/src/i18n/I18nProvider'
@@ -58,6 +62,9 @@ export default function LoginScreen() {
   const [onlinePassword, setOnlinePassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [verificationMessage, setVerificationMessage] = useState<TranslationKey | null>(null)
+  const [verificationPending, setVerificationPending] = useState(false)
+  const [passwordResetMessage, setPasswordResetMessage] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<AuthField, TranslationKey>>>({})
 
   useEffect(() => {
@@ -85,7 +92,9 @@ export default function LoginScreen() {
 
   const switchAction = (action: OnlineAction) => {
     setOnlineAction(action)
+    setVerificationPending(false)
     setError(null)
+    setVerificationMessage(null)
     setFieldErrors({})
   }
 
@@ -130,7 +139,24 @@ export default function LoginScreen() {
     try {
       await loginOnline(database, apiUrl, email, onlinePassword)
       const currentUser = await fetchCurrentUser(database)
-      router.replace(postLoginRoute(currentUser) as Href)
+      const nextRoute = postLoginRoute(currentUser)
+      if (nextRoute === '/platform-admin') {
+        router.replace(nextRoute as Href)
+      } else {
+        const access = await fetchBusinessAccess(database)
+        if (access.length === 1) {
+          const history = await fetchSubscriptionHistory(database, access[0].business_id)
+          const latest = history[0]
+          const expires = latest?.expires_at ? Date.parse(latest.expires_at) : Number.POSITIVE_INFINITY
+          if (!latest || latest.status === 'pending' || latest.status === 'suspended' || latest.status === 'cancelled' || latest.status === 'superseded' || expires <= Date.now()) {
+            router.replace({ pathname: '/subscription', params: { businessId: access[0].business_id } })
+          } else {
+            router.replace('/businesses')
+          }
+        } else {
+          router.replace('/businesses')
+        }
+      }
     } catch (reason) {
       setError(localizeError(reason, 'auth.signInError'))
     } finally {
@@ -156,7 +182,7 @@ export default function LoginScreen() {
     setError(null)
     setFieldErrors({})
     try {
-      const registeredUser = await registerOnline(database, apiUrl, {
+      const result = await registerOnline(database, apiUrl, {
         fullName,
         email,
         phone,
@@ -164,15 +190,42 @@ export default function LoginScreen() {
         businessName,
         preferredLanguage: language,
       })
-      const destination = postLoginRoute(registeredUser)
-      router.replace({
-        pathname: destination,
-        params: destination === '/businesses'
-          ? { notice: t('auth.registrationSuccess') }
-          : undefined,
-      })
+      setOnlinePassword('')
+      setConfirmPassword('')
+      setOnlineAction('login')
+      setEmail(result.email)
+      setVerificationPending(true)
+      setFieldErrors({})
+      setVerificationMessage(result.email_sent
+        ? 'auth.verificationSent'
+        : result.delivery_configured
+          ? 'auth.verificationDeliveryFailed'
+          : 'auth.verificationNotConfigured')
     } catch (reason) {
       setError(localizeError(reason, 'auth.registerError'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const resendVerification = async () => {
+    const emailError = validateEmailAddress(email)
+    if (emailError) {
+      setFieldErrors((current) => ({ ...current, email: emailError }))
+      setVerificationMessage(null)
+      return
+    }
+    setSaving(true)
+    setError(null)
+    try {
+      const result = await resendVerificationEmail(database, email)
+      setVerificationMessage(result.delivery_configured
+        ? result.delivery_sent === false
+          ? 'auth.verificationDeliveryFailed'
+          : 'auth.verificationResendRequested'
+        : 'auth.verificationNotConfigured')
+    } catch (reason) {
+      setError(localizeError(reason, 'auth.verificationResendError'))
     } finally {
       setSaving(false)
     }
@@ -218,33 +271,14 @@ export default function LoginScreen() {
           title={mode === 'device' && legacyOwner
             ? t('auth.secureExisting')
             : mode === 'online'
-              ? t(onlineAction === 'login' ? 'auth.signInTitle' : 'auth.createAccountTitle')
+              ? t(verificationPending ? 'auth.verificationPendingTitle' : onlineAction === 'login' ? 'auth.signInTitle' : 'auth.createAccountTitle')
               : t('auth.login')}
           subtitle={mode === 'device' && legacyOwner
             ? t('auth.legacySubtitle')
             : mode === 'online'
-              ? t(onlineAction === 'login' ? 'auth.onlineSubtitle' : 'auth.registrationSubtitle')
+              ? t(verificationPending ? 'auth.verificationPendingSubtitle' : onlineAction === 'login' ? 'auth.onlineSubtitle' : 'auth.registrationSubtitle')
               : t('auth.localSubtitle')}
         />
-
-        {mode === 'online' ? (
-          <View style={styles.actionTabs} accessibilityRole="tablist">
-            <AuthTab
-              label={t('auth.signInTab')}
-              selected={onlineAction === 'login'}
-              onPress={() => switchAction('login')}
-              disabled={saving}
-              colors={colors}
-            />
-            <AuthTab
-              label={t('auth.createAccountTab')}
-              selected={onlineAction === 'register'}
-              onPress={() => switchAction('register')}
-              disabled={saving}
-              colors={colors}
-            />
-          </View>
-        ) : null}
 
         {!hasBusiness && mode === 'device' ? (
           <Button
@@ -275,12 +309,24 @@ export default function LoginScreen() {
               />
               <PasswordField label={t('auth.password')} value={password} onChangeText={setPassword} />
               {error ? <Text style={styles.error}>{error}</Text> : null}
+              {verificationMessage ? <Text style={styles.success}>{t(verificationMessage)}</Text> : null}
               {notice ? <Text style={styles.success}>{notice}</Text> : null}
               <Button
                 label={saving ? t('auth.verifying') : legacyOwner ? t('auth.secureOwner') : t('auth.login')}
                 onPress={() => void signIn()}
                 disabled={saving}
               />
+            </>
+          ) : verificationPending ? (
+            <>
+              <Text style={styles.success}>{t('auth.verificationCheckEmail', { email })}</Text>
+              {verificationMessage ? <Text style={styles.success}>{t(verificationMessage)}</Text> : null}
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+              <Button label={saving ? t('auth.resendingVerification') : t('auth.resendVerification')} onPress={() => void resendVerification()} disabled={saving || !apiUrl} />
+              <Button label={t('auth.verificationContinue')} secondary onPress={() => { setVerificationPending(false); setVerificationMessage(null); setError(null) }} disabled={saving} />
+              <Pressable accessibilityRole="button" onPress={() => switchAction('register')} disabled={saving} style={styles.footerLink}>
+                <Text style={styles.linkText}>{t('auth.verificationChangeEmail')}</Text>
+              </Pressable>
             </>
           ) : (
             <>
@@ -360,6 +406,34 @@ export default function LoginScreen() {
                 onPress={() => void (onlineAction === 'login' ? signInOnline() : signUpOnline())}
                 disabled={saving || !apiUrl}
               />
+              {onlineAction === 'login' && email.trim() ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => void resendVerification()}
+                  disabled={saving || !apiUrl}
+                  style={styles.footerLink}
+                >
+                  <Text style={styles.linkText}>
+                    {saving ? t('auth.resendingVerification') : t('auth.resendVerification')}
+                  </Text>
+                </Pressable>
+              ) : null}
+              {onlineAction === 'login' && email.trim() ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    const emailError = validateEmailAddress(email)
+                    if (emailError) { setFieldErrors((current) => ({ ...current, email: emailError })); return }
+                    setSaving(true)
+                    setError(null)
+                    setPasswordResetMessage(false)
+                    void requestPasswordReset(database, email).then(() => setPasswordResetMessage(true)).catch((reason) => setError(localizeError(reason, 'auth.passwordResetError'))).finally(() => setSaving(false))
+                  }}
+                  disabled={saving || !apiUrl}
+                  style={styles.footerLink}
+                ><Text style={styles.linkText}>{t('auth.forgotPassword')}</Text></Pressable>
+              ) : null}
+              {passwordResetMessage ? <Text accessibilityRole="alert" style={styles.success}>{t('auth.passwordResetRequested')}</Text> : null}
               <Text style={styles.footerText}>
                 {onlineAction === 'login' ? t('auth.noAccount') : t('auth.haveAccountPrompt')}
               </Text>
@@ -435,7 +509,6 @@ function createStyles(colors: ThemeColors) {
       padding: 4,
       width: '100%',
     },
-    actionTabs: { flexDirection: 'row', gap: 8, maxWidth: 480, width: '100%' },
     formCard: { maxWidth: 480, width: '100%' },
     error: { color: colors.danger, fontSize: 13, lineHeight: 18 },
     success: { color: colors.accentPressed, fontSize: 13, lineHeight: 18 },

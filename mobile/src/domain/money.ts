@@ -21,6 +21,13 @@ export function multiplyMoney(unitAmount: number, quantity: number): number {
   return total
 }
 
+export function cartTotal(items: Array<{ unitAmount: number; quantity: number }>): number {
+  return items.reduce((sum, item) => {
+    if (item.quantity === 0) return sum
+    return sum + multiplyMoney(item.unitAmount, item.quantity)
+  }, 0)
+}
+
 export function formatTzs(amountMinor: number, language: 'en' | 'sw' = 'en'): string {
   if (!Number.isSafeInteger(amountMinor) || amountMinor < 0) {
     throw new Error('Amount must be a non-negative whole TZS value.')

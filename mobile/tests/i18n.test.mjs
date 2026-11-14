@@ -10,6 +10,12 @@ test('English and Swahili dictionaries cover every typed translation key', () =>
   }
 })
 
+test('unknown runtime translation keys fall back safely instead of throwing', () => {
+  const key = 'products.history.actor.legacy_action'
+  assert.equal(translate('en', key), `⟦${key}⟧`)
+  assert.equal(translate('sw', key), `⟦${key}⟧`)
+})
+
 test('welcome content is localized in English and Swahili', () => {
   assert.equal(translate('en', 'welcome.title'), 'Welcome to ShopFlow')
   assert.equal(translate('en', 'welcome.subtitle'), 'Manage your business. Track your sales. Grow with confidence.')

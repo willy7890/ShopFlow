@@ -5,6 +5,8 @@ from app.core.database import get_db
 from app.core.dependencies import (
     get_business_membership,
     get_current_user,
+    is_trusted_super_admin,
+    PLATFORM_PERMISSIONS,
     require_roles,
 )
 from app.modules.auth.models import User
@@ -22,6 +24,29 @@ router = APIRouter()
 
 @router.get("/access", response_model=list[BusinessAccessOut])
 def list_business_access(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if is_trusted_super_admin(current_user):
+        businesses = db.query(Business).order_by(Business.name).all()
+        access = []
+        for business in businesses:
+            stores = (
+                db.query(Store)
+                .filter(Store.business_id == business.id, Store.is_active.is_(True))
+                .order_by(Store.name)
+                .all()
+            )
+            access.append(
+                BusinessAccessOut(
+                    business_id=business.id,
+                    business_name=business.name,
+                    currency=business.currency,
+                    role="owner",
+                    store_ids=[store.id for store in stores],
+                    permissions=PLATFORM_PERMISSIONS.copy(),
+                    stores=stores,
+                )
+            )
+        return access
+
     memberships = (
         db.query(Membership, Business)
         .join(Business, Business.id == Membership.business_id)
@@ -56,6 +81,8 @@ def list_business_access(current_user: User = Depends(get_current_user), db: Ses
 
 @router.get("", response_model=list[BusinessOut])
 def list_businesses(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if is_trusted_super_admin(current_user):
+        return db.query(Business).order_by(Business.created_at.desc()).all()
     return (
         db.query(Business)
         .join(Membership, Membership.business_id == Business.id)

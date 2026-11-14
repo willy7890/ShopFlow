@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -14,7 +16,7 @@ class SyncDeviceOut(BaseModel):
     device_name: str
     device_type: str
     platform: str | None
-    last_sync_at: str | None = None
+    last_sync_at: datetime | None = None
     model_config = ConfigDict(from_attributes=True)
 
 

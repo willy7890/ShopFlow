@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite'
+import { withDatabaseTransaction } from '../database/transactions.ts'
 import type { Workspace } from './workspace.ts'
 import { assertActiveWorkspace, assertAnyPermission, assertPermission } from './workspace.ts'
 
@@ -71,7 +72,7 @@ export async function recordOpeningBalance(
   }
   const note = input.note.trim()
   if (note.length > 240) throw new Error('Note must be at most 240 characters.')
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     const existing = await transaction.getFirstAsync<{ id: string }>(
       `SELECT id FROM cashbook_entries
        WHERE business_id = ? AND store_id = ? AND reference_id = 'opening-balance'`,
@@ -107,7 +108,7 @@ export async function reconcileCashbook(
     throw new Error('Enter a reconciliation note of 2 to 240 characters.')
   }
   let difference = 0
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     const totals = await transaction.getFirstAsync<CashbookTotals>(
       `SELECT
          COALESCE(SUM(CASE WHEN entry_type = 'income' THEN amount_minor ELSE 0 END), 0) AS incomeMinor,
@@ -232,7 +233,7 @@ export async function createManualCashbookEntry(
   }
   if (note.length > 240) throw new Error('Note must be at most 240 characters.')
 
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     await writeCashbookEntry(transaction, workspace, {
       entryType: input.entryType,
       source: 'manual',

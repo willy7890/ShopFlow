@@ -76,7 +76,7 @@ const g = async <R>(url: string, params?: object, headers?: Record<string, strin
   (await http.get<R>(url, { params, headers })).data
 const p = async <R>(url: string, body?: unknown, headers?: Record<string, string>) =>
   (await http.post<R>(url, body, { headers })).data
-const u = async <R>(url: string, body?: unknown) => (await http.patch<R>(url, body)).data
+const u = async <R>(url: string, body?: unknown, headers?: Record<string, string>) => (await http.patch<R>(url, body, { headers })).data
 const amount = (value: number | string | null | undefined) => Number(value ?? 0)
 const dateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 const categoryIds = new Map<number, string>()
@@ -143,7 +143,12 @@ const mapEntitlements = (data?: BackendEntitlements): T.Entitlements => {
 async function loadMe(token: string, user: BackendUser, preferredBusinessId?: string): Promise<T.Me> {
   const headers = { Authorization: `Bearer ${token}` }
   const accesses = await g<BusinessAccess[]>('/businesses/access', undefined, headers)
-  const access = accesses.find((item) => item.business_id === preferredBusinessId) ?? accesses[0]
+  const access = user.is_super_admin
+    ? preferredBusinessId ? accesses.find((item) => item.business_id === preferredBusinessId) : undefined
+    : preferredBusinessId ? accesses.find((item) => item.business_id === preferredBusinessId) ?? accesses[0] : accesses[0]
+  if (user.is_super_admin && preferredBusinessId && !access) {
+    throw new Error('The selected business is no longer available to the Super Admin account.')
+  }
   if (!access) {
     return {
       user: { id: user.id, name: user.full_name, email: user.email, role: 'owner', permissions: [], businessPermissions: [], isSuperAdmin: user.is_super_admin ?? false },
@@ -487,24 +492,28 @@ export const httpApi: Api = {
   auth: {
     login,
     register: async (data) => {
-      const result = await p<BackendSession>('/auth/register', {
+      return p('/auth/register', {
         full_name: data.name,
         email: data.email,
         password: data.password,
         business_name: `${data.name}'s Shop`,
       })
-      return { token: result.access_token, refreshToken: result.refresh_token, me: await loadMe(result.access_token, result.user) }
     },
-    forgot: async () => { throw new Error('Password recovery is not available on the backend yet.') },
-    reset: async () => { throw new Error('Password recovery is not available on the backend yet.') },
-    me: async () => {
+    resendVerification: async (email) => { await p('/auth/resend-verification', { email }) },
+    forgot: async (email) => { await p('/auth/password-reset/request', { email }) },
+    reset: async (token, password) => { await p('/auth/password-reset/confirm', { token, new_password: password }) },
+    me: async (businessId) => {
       const { token, me } = useAuth.getState()
       if (!token || !me) throw new Error('Sign in to load your account.')
       const currentUser = await g<BackendUser>('/auth/me')
-      return loadMe(token, currentUser, me.business?.id)
+      return loadMe(token, currentUser, businessId ?? me.business?.id)
     },
   },
   business: {
+    access: async () => {
+      const accesses = await g<BusinessAccess[]>('/businesses/access')
+      return accesses.map(({ business_id, business_name }) => ({ id: business_id, name: business_name }))
+    },
     create: async (data) => {
       const created = await p<{ id: string }>('/businesses', {
         name: data.name,
@@ -555,6 +564,24 @@ export const httpApi: Api = {
     list: async () => (await g<BackendSale[]>('/sales')).map(mapSale),
     create: (data) => p('/sales', data),
     voidSale: async () => { throw new Error('Sale voiding is not available on the backend yet.') },
+  },
+  orders: {
+    list: (options = {}) => g<T.Order[]>('/orders', { search: options.search || undefined, status: options.status, store_id: options.storeId, offset: options.offset ?? 0, limit: options.limit ?? 50 }),
+    get: (id) => g<T.Order>(`/orders/${id}`),
+    create: (input) => p<T.Order>('/orders', {
+      store_id: input.storeId, customer_name: input.customerName || undefined,
+      customer_phone: input.customerPhone || undefined, note: input.note || undefined,
+      items: input.items.map((item) => {
+        const variantId = variantIds.get(item.variantId)
+        if (!variantId) throw new Error('The selected variant is unavailable. Reload the product list.')
+        return { variant_id: variantId, quantity: item.quantity, unit_price: item.unitPrice }
+      }),
+    }),
+    confirm: (id) => p<T.Order>(`/orders/${id}/confirm`),
+    prepare: (id) => p<T.Order>(`/orders/${id}/prepare`),
+    complete: (id) => p<T.Order>(`/orders/${id}/complete`),
+    cancel: (id) => p<T.Order>(`/orders/${id}/cancel`),
+    convertToSale: (id) => p<T.Order>(`/orders/${id}/convert-to-sale`),
   },
   people: {
     customers: fetchCustomers,
@@ -686,17 +713,99 @@ export const httpApi: Api = {
     },
     setPlan: async () => { throw new Error('Plan changes are not available through this adapter yet.') },
   },
+  subscription: {
+    plans: () => g<T.AdminPlan[]>('/subscriptions/plans'),
+    current: () => g<T.BusinessSubscription | null>('/subscriptions/current'),
+    history: () => g<T.BusinessSubscription[]>('/subscriptions/history'),
+    payments: () => g<T.SubscriptionPayment[]>('/subscriptions/payments/mine'),
+    paymentInstructions: () => g<T.SubscriptionPaymentInstructions>('/subscriptions/payment-instructions'),
+    requestPlan: (plan_id) => p<T.BusinessSubscription>('/subscriptions/request', { plan_id }),
+    submitPayment: (input) => p<T.SubscriptionPayment>('/subscriptions/payments/submit', input),
+  },
   platformAdmin: {
     analytics: () => g<T.PlatformAnalytics>('/subscriptions/admin/analytics'),
-    businesses: () => g<T.AdminBusiness[]>('/subscriptions/admin/businesses', { offset: 0, limit: 100 }),
-    users: () => g<T.PlatformUser[]>('/subscriptions/admin/users', { offset: 0, limit: 100 }),
+    businesses: (options = {}) => g<T.AdminBusiness[]>('/subscriptions/admin/businesses', {
+      offset: options.offset ?? 0, limit: options.limit ?? 100, search: options.search,
+      is_active: options.isActive, plan_id: options.planId, subscription_status: options.subscriptionStatus,
+      registered_from: options.registeredFrom, registered_to: options.registeredTo,
+    }),
+    business: (id) => g<T.AdminBusinessDetail>(`/subscriptions/admin/businesses/${id}`),
+    businessStores: (id) => g<T.PlatformStore[]>(`/subscriptions/admin/businesses/${id}/stores`),
+    createStore: async (id, input) => { await p(`/subscriptions/admin/businesses/${id}/stores`, input) },
+    setStoreStatus: async (id, is_active, reason) => { await u(`/subscriptions/admin/stores/${id}/status`, { is_active, reason }) },
+    businessReport: async (id, start, end) => {
+      const headers = { 'X-Business-ID': id }
+      const params = { start_date: start, end_date: end }
+      const [report, expenses, transactions, cashbook, cashbook_balance, stores, suppliers] = await Promise.all([
+        g<T.PlatformBusinessReport>('/reports/mobile-dashboard', params, headers),
+        g<{ total_expenses: string; entries: { category: string; amount: string }[] }>('/reports/expenses', params, headers),
+        g<T.PlatformReportSale[]>('/reports/transactions', { ...params, limit: 100 }, headers),
+        g<T.PlatformCashbookEntry[]>('/finance/entries', params, headers),
+        g<T.PlatformBusinessReport['cashbook_balance']>('/finance/balance', params, headers),
+        g<{ id: string; name: string }[]>(`/businesses/${id}/stores`, {}, headers),
+        g<{ id: string; name: string }[]>('/inventory/suppliers', undefined, headers),
+      ])
+      const [movementGroups, paymentGroups] = await Promise.all([
+        Promise.all(stores.map((store) => g<T.PlatformStockMovement[]>('/inventory/movements', { store_id: store.id, ...params }, headers))),
+        Promise.all(suppliers.map((supplier) => g<{ payments: Omit<T.PlatformSupplierPayment, 'supplier_name'>[] }>(`/inventory/suppliers/${supplier.id}/statement`, undefined, headers))),
+      ])
+      const inRange = (value: string) => value.slice(0, 10) >= start && value.slice(0, 10) <= end
+      return {
+        ...report, expenses: expenses.total_expenses, expense_categories: expenses.entries, transactions, cashbook, cashbook_balance,
+        stock_movements: movementGroups.flat().filter((movement) => inRange(movement.created_at)).map((movement) => ({ ...movement, store_name: stores.find((store) => store.id === movement.store_id)?.name })),
+        supplier_payments: paymentGroups.flatMap((statement, index) => statement.payments.filter((payment) => inRange(payment.created_at)).map((payment) => ({ ...payment, supplier_name: suppliers[index].name }))),
+      }
+    },
+    users: (options = {}) => g<T.PlatformUser[]>('/subscriptions/admin/users', {
+      offset: options.offset ?? 0,
+      limit: options.limit ?? 50,
+      search: options.search,
+      business_id: options.businessId,
+      role: options.role,
+      is_active: options.isActive,
+      is_verified: options.isVerified,
+      registered_from: options.registeredFrom,
+      registered_to: options.registeredTo,
+    }),
+    user: (id) => g<T.PlatformUserDetail>(`/subscriptions/admin/users/${id}`),
     plans: () => g<T.AdminPlan[]>('/subscriptions/plans', { active_only: false }),
-    audit: () => g<T.PlatformAudit[]>('/subscriptions/admin/audit-logs', { offset: 0, limit: 100 }),
-    createPlan: async (input) => { await p('/subscriptions/admin/plans', { ...input, is_active: true }) },
+    ensureInitialPlans: (reason) => p<T.InitialPlanSetup>('/subscriptions/admin/plans/ensure-initial-tzs', { reason }),
+    planBusinesses: (id) => g<T.AdminBusiness[]>(`/subscriptions/admin/plans/${id}/businesses`),
+    subscriptions: (status) => g<T.AdminSubscription[]>('/subscriptions/admin/subscriptions', { offset: 0, limit: 100, status }),
+    payments: (options = {}) => g<T.SubscriptionPayment[]>('/subscriptions/admin/payments', {
+      status: options.status, business_id: options.businessId, offset: options.offset ?? 0, limit: options.limit ?? 50,
+    }),
+    paymentSettings: () => g<T.SubscriptionPaymentMethodSetting[]>('/subscriptions/admin/payment-settings'),
+    updatePaymentSetting: (currency, method, input) => u<T.SubscriptionPaymentMethodSetting>(`/subscriptions/admin/payment-settings/${currency}/${method}`, input),
+    recordPayment: async (input) => { await p('/subscriptions/admin/payments', input) },
+    updatePayment: async (id, input) => { await u(`/subscriptions/admin/payments/${id}`, input) },
+    refundPayment: async (id, input) => { await p(`/subscriptions/admin/payments/${id}/refund`, { status: 'refunded', ...input }) },
+    revenue: (start, end) => g<T.PlatformRevenue>('/subscriptions/admin/revenue', { start_date: start, end_date: end }),
+    audit: (options = {}) => g<T.PlatformAudit[]>('/subscriptions/admin/audit-logs', { offset: 0, limit: 100, business_id: options.businessId }),
+    globalReports: (start, end) => g<T.PlatformGlobalReport>('/subscriptions/admin/global-reports', { start_date: start, end_date: end }),
+    health: () => g<{ status: string; service: string }>('/subscriptions/admin/health'),
+    createPlan: async (input) => { await p('/subscriptions/admin/plans', input) },
+    updatePlan: async (id, input) => { await u(`/subscriptions/admin/plans/${id}`, input) },
+    archivePlan: async (id, reason) => { await p(`/subscriptions/admin/plans/${id}/archive`, { reason }) },
+    updateBusiness: async (id, input) => { await u(`/subscriptions/admin/businesses/${id}`, input) },
     setBusinessStatus: async (id, is_active, reason) => { await u(`/subscriptions/admin/businesses/${id}/status`, { is_active, reason }) },
     setUserStatus: async (id, is_active, reason) => { await u(`/subscriptions/admin/users/${id}/status`, { is_active, reason }) },
-    grantPlan: async (businessId, plan_id, duration_days, reason) => {
-      await p(`/subscriptions/admin/businesses/${businessId}/grant`, { plan_id, duration_days, reason })
+    grantPlan: async (businessId, plan_id, duration_days, reason, grant_type = 'complimentary') => {
+      await p(`/subscriptions/admin/businesses/${businessId}/grant`, { plan_id, duration_days, grant_type, reason })
+    },
+    updateSubscription: async (id, input) => { await u(`/subscriptions/admin/subscriptions/${id}`, input) },
+    exportBusinessReport: async (id, start, end, format) => {
+      const response = await http.get<Blob>(`/reports/export/${format}`, {
+        params: { start_date: start, end_date: end },
+        headers: { 'X-Business-ID': id },
+        responseType: 'blob',
+      })
+      const blobUrl = URL.createObjectURL(response.data)
+      const link = document.createElement('a')
+      link.href = blobUrl
+      link.download = `shopflow-${id}-report.${format}`
+      link.click()
+      URL.revokeObjectURL(blobUrl)
     },
   },
 }

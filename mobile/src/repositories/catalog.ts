@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite'
+import { withDatabaseTransaction } from '../database/transactions.ts'
 import {
   productInput,
   type ProductInput,
@@ -257,7 +258,7 @@ export async function createProduct(
     throw new Error('Opening stock must be zero while simplified sales mode is enabled.')
   }
 
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     await transaction.runAsync(
       'INSERT INTO products (id, business_id, category_id, name, barcode, created_at) VALUES (?, ?, ?, ?, ?, ?)',
       productId,
@@ -389,7 +390,7 @@ export async function updateProduct(
     barcode: existing.barcode,
   }
 
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     await transaction.runAsync(
       `UPDATE products SET category_id = ?, name = ?, barcode = ?
        WHERE id = ? AND business_id = ?`,

@@ -23,8 +23,10 @@ import { listProductAuditEvents, type ProductAuditEvent } from '@/src/repositori
 import { getActiveWorkspace, type Workspace } from '@/src/repositories/workspace'
 import { useTheme, type ThemeColors } from '@/src/theme/colors'
 import { useI18n } from '@/src/i18n/I18nProvider'
-import { formatNumber } from '@/src/i18n/format'
+import type { TranslationKey } from '@/src/i18n/translations'
+import { formatDateTime, formatNumber } from '@/src/i18n/format'
 import { BarcodeScanner } from '@/src/components/BarcodeScanner'
+import { productAuditAction, productAuditDetails } from '@/src/domain/productAuditPresentation'
 
 function parseWholeNumber(value: string): number | null {
   if (!/^\d+$/.test(value.trim())) return null
@@ -427,20 +429,60 @@ export default function ProductsScreen() {
             />
           ))}
         </View>
-        {auditEvents.length === 0 ? <Text style={styles.muted}>{t('products.noHistory')}</Text> : auditEvents.map((event) => (
-          <View key={event.id} style={styles.historyRow}>
-            <View style={styles.flex}>
-              <Text style={styles.productName}>{event.productName} · {t(`products.history.${event.eventType}`)}</Text>
-              <Text style={styles.muted}>
-                {event.categoryName || t('common.uncategorized')} · {event.sku ?? ''}
-                {event.actorName ? ` · ${event.actorName}` : ''}
-              </Text>
-              {event.beforeJson ? <Text style={styles.muted}>{event.beforeJson}</Text> : null}
-              <Text style={styles.muted}>{event.afterJson}</Text>
-              <Text style={styles.muted}>{new Date(event.createdAt).toLocaleString(language === 'sw' ? 'sw-TZ' : 'en-TZ')}</Text>
+        {auditEvents.length === 0 ? <Text style={styles.muted}>{t('products.noHistory')}</Text> : auditEvents.map((event) => {
+          const action = productAuditAction(event.eventType)
+          const details = productAuditDetails(event, (value) => formatNumber(value, language))
+          return (
+            <View key={event.id} style={styles.historyRow}>
+              <View style={styles.historyTimeline}>
+                <View style={[styles.historyMarker, styles[`historyMarker_${action}`]]}>
+                  <Text style={[styles.historyMarkerText, styles[`historyMarkerText_${action}`]]}>
+                    {action === 'created' ? '+' : action === 'updated' ? '✎' : action === 'stock_adjusted' ? '↕' : action === 'deleted' ? '×' : '•'}
+                  </Text>
+                </View>
+                <View style={styles.historyContent}>
+                  <View style={styles.historyHeading}>
+                    <Text style={styles.productName} numberOfLines={2}>{event.productName}</Text>
+                    <View style={[styles.actionBadge, styles[`actionBadge_${action}`]]}>
+                      <Text style={[styles.actionBadgeText, styles[`actionBadgeText_${action}`]]}>
+                        {t(`products.history.${action}`)}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.muted}>
+                    {t(`products.history.actor.${action}`, { name: event.actorName || t('products.history.unknownActor') })}
+                  </Text>
+                  {details.length === 0 ? (
+                    <Text style={styles.muted}>{t('products.audit.detailsUnavailable')}</Text>
+                  ) : (
+                    <View style={styles.auditDetails}>
+                      {details.map((detail) => (
+                        <View key={detail.key} style={styles.auditDetailRow}>
+                          <Text style={styles.auditDetailLabel}>{t(detail.labelKey as TranslationKey)}</Text>
+                          <Text style={styles.auditDetailValue}>
+                            {detail.previous !== undefined
+                              ? `${detail.previous || t('common.uncategorized')} → `
+                              : ''}
+                            {detail.key === 'categoryName' && !detail.current
+                              ? t('common.uncategorized')
+                              : detail.current}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                  {!details.some((detail) => detail.key === 'categoryName') ? (
+                    <View style={styles.auditDetailRow}>
+                      <Text style={styles.auditDetailLabel}>{t('products.audit.category')}</Text>
+                      <Text style={styles.auditDetailValue}>{event.categoryName || t('common.uncategorized')}</Text>
+                    </View>
+                  ) : null}
+                  <Text style={styles.auditTimestamp}>{formatDateTime(event.createdAt, language)}</Text>
+                </View>
+              </View>
             </View>
-          </View>
-        ))}
+          )
+        })}
       </Card>
       <BarcodeScanner
         visible={scannerOpen}
@@ -545,7 +587,39 @@ function createStyles(colors: ThemeColors) {
     productName: { color: colors.text, flex: 1, fontSize: 15, fontWeight: '700' },
     stock: { color: colors.text, fontSize: 14, fontWeight: '700' },
     muted: { color: colors.muted, fontSize: 13 },
-    historyRow: { borderTopColor: colors.border, borderTopWidth: 1, paddingVertical: 10 },
+    historyRow: { borderTopColor: colors.border, borderTopWidth: 1, paddingVertical: 12 },
+    historyTimeline: { flexDirection: 'row', gap: 11 },
+    historyMarker: { alignItems: 'center', borderRadius: 16, borderWidth: 1, height: 30, justifyContent: 'center', marginTop: 1, width: 30 },
+    historyMarker_created: { backgroundColor: colors.success + '18', borderColor: colors.success + '66' },
+    historyMarker_updated: { backgroundColor: colors.accentSurface, borderColor: colors.accentBorder },
+    historyMarker_stock_adjusted: { backgroundColor: colors.danger + '18', borderColor: colors.danger + '66' },
+    historyMarker_deleted: { backgroundColor: colors.danger + '18', borderColor: colors.danger + '66' },
+    historyMarker_unknown: { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+    historyMarkerText: { fontSize: 16, fontWeight: '800' },
+    historyMarkerText_created: { color: colors.success },
+    historyMarkerText_updated: { color: colors.accentPressed },
+    historyMarkerText_stock_adjusted: { color: colors.danger },
+    historyMarkerText_deleted: { color: colors.danger },
+    historyMarkerText_unknown: { color: colors.muted },
+    historyContent: { flex: 1, gap: 5 },
+    historyHeading: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 7, justifyContent: 'space-between' },
+    actionBadge: { alignSelf: 'flex-start', borderRadius: 99, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3 },
+    actionBadge_created: { backgroundColor: colors.success + '18', borderColor: colors.success + '66' },
+    actionBadge_updated: { backgroundColor: colors.accentSurface, borderColor: colors.accentBorder },
+    actionBadge_stock_adjusted: { backgroundColor: colors.danger + '18', borderColor: colors.danger + '66' },
+    actionBadge_deleted: { backgroundColor: colors.danger + '18', borderColor: colors.danger + '66' },
+    actionBadge_unknown: { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+    actionBadgeText: { fontSize: 11, fontWeight: '700' },
+    actionBadgeText_created: { color: colors.success },
+    actionBadgeText_updated: { color: colors.accentPressed },
+    actionBadgeText_stock_adjusted: { color: colors.danger },
+    actionBadgeText_deleted: { color: colors.danger },
+    actionBadgeText_unknown: { color: colors.muted },
+    auditDetails: { gap: 4, paddingTop: 3 },
+    auditDetailRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
+    auditDetailLabel: { color: colors.muted, fontSize: 12 },
+    auditDetailValue: { color: colors.text, flexShrink: 1, fontSize: 12, fontWeight: '600' },
+    auditTimestamp: { color: colors.muted, fontSize: 11, paddingTop: 3 },
     duplicateCard: { backgroundColor: colors.accentSurface, borderColor: colors.accentBorder },
     duplicateTitle: { color: colors.accentText, fontSize: 15, fontWeight: '700' },
     qrModal: { alignItems: 'center', flex: 1, gap: 16, justifyContent: 'center', padding: 24 },

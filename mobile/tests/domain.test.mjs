@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { formatTzs, multiplyMoney, parseTzsAmount } from '../src/domain/money.ts'
+import { cartTotal, formatTzs, multiplyMoney, parseTzsAmount } from '../src/domain/money.ts'
 import { cashSaleInput, productInput, workspaceInput } from '../src/domain/validation.ts'
 import {
   defaultApiBaseUrl,
@@ -11,7 +11,7 @@ import { buildInvoiceHtml } from '../src/domain/invoiceHtml.ts'
 import { dashboardMetrics } from '../src/domain/dashboard.ts'
 import { buildProductQrHtml, generateProductQr } from '../src/domain/productQr.ts'
 import { isPlatformAdmin, postLoginRoute } from '../src/domain/platformAdmin.ts'
-import { firstAuthIssue, validateOnlineLogin, validateOnlineRegistration } from '../src/domain/authValidation.ts'
+import { firstAuthIssue, validateEmailAddress, validateOnlineLogin, validateOnlineRegistration } from '../src/domain/authValidation.ts'
 import { passwordVisibilityState, togglePasswordVisibility } from '../src/domain/passwordVisibility.ts'
 
 test('maps backend dashboard amounts and counts without losing report fields', () => {
@@ -74,6 +74,16 @@ test('multiplies money using safe integer arithmetic', () => {
   assert.equal(multiplyMoney(1200, 3), 3600)
   assert.throws(() => multiplyMoney(1200, 0), /positive whole number/)
   assert.throws(() => multiplyMoney(Number.MAX_SAFE_INTEGER, 2), /too large/)
+})
+
+test('cart total omits removed zero-quantity lines while keeping money validation strict', () => {
+  assert.equal(cartTotal([
+    { unitAmount: 1200, quantity: 2 },
+    { unitAmount: 700, quantity: 0 },
+  ]), 2400)
+  assert.equal(cartTotal([{ unitAmount: 700, quantity: 0 }]), 0)
+  assert.throws(() => cartTotal([{ unitAmount: 700, quantity: -1 }]), /positive whole number/)
+  assert.throws(() => multiplyMoney(700, 0), /positive whole number/)
 })
 
 test('formats TZS without fractional values', () => {
@@ -146,6 +156,9 @@ test('routes only the backend-confirmed super admin to platform administration',
 })
 
 test('validates online login and registration using backend field limits', () => {
+  assert.equal(validateEmailAddress('  wilbardmagaso777@gmail.com  '), null)
+  assert.equal(validateEmailAddress('   '), 'errors.emailRequired')
+  assert.equal(validateEmailAddress('not-an-email'), 'errors.emailInvalid')
   assert.deepEqual(validateOnlineLogin('', ''), [
     { field: 'email', message: 'errors.emailRequired' },
     { field: 'password', message: 'errors.onlinePasswordRequired' },
@@ -159,8 +172,8 @@ test('validates online login and registration using backend field limits', () =>
     email: 'asha@example.com',
     phone: '+255700000000',
     businessName: 'Asha Shop',
-    password: 'secure-password',
-    confirmPassword: 'secure-password',
+    password: 'Secure-Password123',
+    confirmPassword: 'Secure-Password123',
   }
   assert.deepEqual(validateOnlineRegistration(valid), [])
   assert.deepEqual(validateOnlineRegistration({ ...valid, confirmPassword: 'different' }), [

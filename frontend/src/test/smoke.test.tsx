@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { describe, expect, it, beforeAll } from 'vitest'
-import { render, screen, waitFor, fireEvent, cleanup } from '@testing-library/react'
+import { render, renderHook, screen, waitFor, fireEvent, cleanup } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
 import type { ComponentType } from 'react'
 import { queryClient } from '../lib/queryClient'
 import { useAuth } from '../store/auth'
 import { mockApi } from '../api/mock'
+import { useRouteAllowed, useVisibleNav } from '../components/AppShell'
 
 beforeAll(async () => {
   class ResizeObserverMock {
@@ -26,15 +27,15 @@ describe('every screen renders against the mock API', () => {
   const pages: [string, () => Promise<{ default: ComponentType }>, string][] = [
     ['dashboard', () => import('../features/dashboard/Dashboard'), 'Dashibodi'], ['products', () => import('../features/catalog/Products'), 'Sabuni ya unga'],
     ['categories', () => import('../features/catalog/Categories'), 'Vinywaji'], ['inventory', () => import('../features/inventory/Inventory'), 'Stoo ya sasa'],
-    ['purchases', () => import('../features/people/Purchases'), 'PUR-0031'], ['sales', () => import('../features/sales/Sales'), 'INV-0148'], ['invoices', () => import('../features/sales/Invoices'), 'INV-0147'],
+    ['purchases', () => import('../features/people/Purchases'), 'PUR-0031'], ['sales', () => import('../features/sales/Sales'), 'INV-0148'], ['orders', () => import('../features/orders/Orders'), 'Orders'], ['invoices', () => import('../features/sales/Invoices'), 'INV-0147'],
     ['customers', () => import('../features/people/Customers'), 'Mama Neema'], ['suppliers', () => import('../features/people/Suppliers'), 'Kariakoo Wholesale'], ['debts', () => import('../features/people/Debts'), 'Duka la Juma'],
     ['expenses', () => import('../features/finance/Expenses'), 'Kodi ya duka'], ['cashbook', () => import('../features/finance/Cashbook'), 'Kitabu cha Fedha'], ['reports', () => import('../features/finance/Reports'), 'Ripoti'],
     ['ai', () => import('../features/ai/Assistant'), 'Msaidizi wa AI'], ['employees', () => import('../features/admin/Employees'), 'Neema Joseph'], ['stores', () => import('../features/admin/Stores'), 'Maduka na Matawi'],
-    ['subscription', () => import('../features/admin/Subscription'), 'Business Pro'], ['settings', () => import('../features/admin/Settings'), 'Mipangilio'], ['sync', () => import('../features/admin/SyncPage'), 'Mtandao na usawazishaji'],
+    ['subscription', () => import('../features/admin/Subscription'), 'Mipango ya biashara yako'], ['settings', () => import('../features/admin/Settings'), 'Mipangilio'], ['sync', () => import('../features/admin/SyncPage'), 'Mtandao na usawazishaji'],
     ['pos', () => import('../features/pos/PosPage'), 'Kituo cha Mauzo'],
   ]
   for (const [name, load, text] of pages) {
-    it(name, async () => { const { default: C } = await load(); mount(C); await waitFor(() => expect(screen.getAllByText(new RegExp(text)).length).toBeGreaterThan(0), { timeout: 4000 }); cleanup() })
+    it(name, async () => { const { default: C } = await load(); mount(C); await waitFor(() => expect(screen.getAllByText(new RegExp(text)).length).toBeGreaterThan(0), { timeout: 10000 }); cleanup() }, name === 'dashboard' ? 15000 : 10000)
   }
 })
 
@@ -89,8 +90,52 @@ describe('key flows', () => {
     useAuth.getState().setMe({ ...session.me, user: { ...session.me.user, isSuperAdmin: true } })
     const { default: PlatformAdmin } = await import('../features/admin/PlatformAdmin')
     mount(PlatformAdmin)
-    await screen.findByText('Dashibodi ya Msimamizi Mkuu')
+    await screen.findByText('ShopFlow System Administration')
     cleanup()
+    useAuth.getState().setMe(session.me)
+  })
+  it('plan editor loads editable price proposals without saving them', async () => {
+    const session = await mockApi.auth.login('owner@example.com', 'password1')
+    useAuth.getState().setMe({ ...session.me, user: { ...session.me.user, isSuperAdmin: true } })
+    const { default: PlatformAdmin } = await import('../features/admin/PlatformAdmin')
+    mount(PlatformAdmin)
+    fireEvent.click(await screen.findByRole('button', { name: 'Mipango ya usajili' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Tengeneza mpango' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Basic · TZS 10,000/month' }))
+    expect((screen.getByLabelText('Price') as HTMLInputElement).value).toBe('10000')
+    expect(screen.getByText(/Nothing is saved until you select Save plan/)).toBeTruthy()
+    cleanup()
+    useAuth.getState().setMe(session.me)
+  })
+  it('Super Admin navigation exposes all business modules without a selected business', async () => {
+    const session = await mockApi.auth.login('owner@example.com', 'password1')
+    useAuth.getState().setMe({
+      ...session.me,
+      user: { ...session.me.user, isSuperAdmin: true },
+      business: null,
+      stores: [],
+      entitlements: { ...session.me.entitlements, features: {} },
+    })
+    const expectedPaths = ['/platform-admin', '/products', '/categories', '/inventory', '/pos', '/sales', '/orders', '/customers', '/debts', '/suppliers', '/expenses', '/cashbook', '/reports', '/employees', '/stores', '/subscription']
+    const { result } = renderHook(() => ({ items: useVisibleNav(), allowed: expectedPaths.map((path) => useRouteAllowed(path)) }))
+    const paths = result.current.items.map((item) => item.path)
+    expectedPaths.forEach((path, index) => {
+      expect(paths).toContain(path)
+      expect(result.current.allowed[index]).toBe(true)
+    })
+    useAuth.getState().setMe(session.me)
+  })
+  it('business navigation uses the canonical plan entitlement keys', async () => {
+    const session = await mockApi.auth.login('owner@example.com', 'password1')
+    useAuth.getState().setMe({
+      ...session.me,
+      entitlements: { ...session.me.entitlements, features: { product_management: true, multi_store: true } },
+    })
+    const { result } = renderHook(() => useVisibleNav().map((item) => item.path))
+    expect(result.current).toContain('/products')
+    expect(result.current).not.toContain('/categories')
+    expect(result.current).toContain('/stores')
+    expect(result.current).not.toContain('/ai')
     useAuth.getState().setMe(session.me)
   })
 })

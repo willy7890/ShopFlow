@@ -8,7 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.router import api_router
 from app.core.config import settings
-from app.core.database import engine, init_db, run_migrations
+from app.core.database import engine, run_migrations
 
 logger = logging.getLogger(__name__)
 
@@ -16,14 +16,15 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     environment = settings.APP_ENV.strip().lower()
-    if environment == "development" and not settings.RENDER:
-        init_db()
-    elif environment != "test":
+    if environment != "test":
+        # Keep local development databases in sync with model changes too.
+        # create_all() only creates missing tables; it never adds new columns
+        # to existing tables, which can otherwise turn reads into 500s.
         run_migrations()
     yield
 
 
-app = FastAPI(
+api_app = FastAPI(
     title=settings.APP_NAME,
     version="0.1.0",
     description="ShopFlow multi-tenant shop management API",
@@ -33,18 +34,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+api_app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 
 
-@app.get("/health", tags=["health"])
+@api_app.get("/health", tags=["health"])
 def health_check() -> dict[str, str]:
     try:
         with engine.connect() as connection:
@@ -53,3 +46,15 @@ def health_check() -> dict[str, str]:
         logger.error("Health check database query failed (%s).", type(error).__name__)
         raise HTTPException(status_code=503, detail="Database unavailable") from error
     return {"status": "ok", "service": "shopflow-backend"}
+
+
+# Wrap the complete ASGI app so CORS headers are also attached to unhandled
+# 500 responses. Otherwise browsers report a CORS failure instead of showing
+# the actual server error and its request ID/log context.
+app = CORSMiddleware(
+    app=api_app,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)

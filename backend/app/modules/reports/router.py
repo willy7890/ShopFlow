@@ -24,8 +24,34 @@ from app.modules.reports.schemas import (
     SupplierReportOut,
 )
 from app.modules.sales.models import Sale, SaleItem, SaleRefund
+from app.modules.sales.schemas import SaleOut
 
 router = APIRouter()
+
+
+@router.get("/transactions", response_model=list[SaleOut])
+def report_transactions(
+    store_id: str | None = Query(default=None),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+    membership: Membership = Depends(get_business_membership),
+    db: Session = Depends(get_db),
+):
+    if membership.role != "owner" and not set(membership.permissions or []).intersection({"view_reports", "manage_sales"}):
+        raise HTTPException(status_code=403, detail="You do not have permission to view transaction reports.")
+    query = db.query(Sale).filter(Sale.business_id == membership.business_id)
+    if store_id:
+        _validate_store(membership, store_id, db)
+        query = query.filter(Sale.store_id == store_id)
+    elif membership.role != "owner":
+        query = query.filter(Sale.store_id.in_(membership.store_access or []))
+    if start_date:
+        query = query.filter(func.date(Sale.created_at) >= start_date.isoformat())
+    if end_date:
+        query = query.filter(func.date(Sale.created_at) <= end_date.isoformat())
+    return query.order_by(Sale.created_at.desc()).offset(offset).limit(limit).all()
 
 
 def _safe_decimal(value: object) -> Decimal:

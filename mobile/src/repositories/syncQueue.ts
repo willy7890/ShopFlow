@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite'
+import { withDatabaseTransaction } from '../database/transactions.ts'
 import type { Workspace } from './workspace.ts'
 import { assertActiveWorkspace, assertPermission } from './workspace.ts'
 
@@ -65,7 +66,7 @@ export async function retryFailedSyncItems(
     throw new Error('Switch to an online business workspace before retrying sync items.')
   }
   let changes = 0
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     const result = await transaction.runAsync(
       `UPDATE outbox SET status = 'pending', last_error = NULL
        WHERE business_id = ?

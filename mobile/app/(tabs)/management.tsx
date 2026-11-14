@@ -335,6 +335,7 @@ export default function ManagementScreen() {
   return (
     <Screen>
       <PageTitle title={t('management.title')} subtitle={t('management.subtitle', { name: workspace.userName, role: translateRole(language, workspace.role) })} />
+      {workspace.role === 'owner' || workspace.role === 'manager' ? <Button label={t('subscription.open')} secondary onPress={() => router.push({ pathname: '/subscription', params: { businessId: workspace.businessId } })} /> : null}
       {allowedPermissions.includes('sell')
         || allowedPermissions.includes('manage_inventory')
         || allowedPermissions.includes('manage_customers')

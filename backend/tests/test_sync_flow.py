@@ -1,8 +1,10 @@
+from datetime import datetime
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
 from app.main import app
+from auth_test_support import register_verified_account
 
 client = TestClient(app)
 
@@ -10,17 +12,14 @@ client = TestClient(app)
 def _register_owner():
     test_id = uuid4().hex
     email = f"sync-{test_id}@example.com"
-    response = client.post(
-        "/api/v1/auth/register",
-        json={
-            "full_name": "Sync Owner",
-            "email": email,
-            "password": "StrongPass123!",
-            "business_name": f"Sync Shop {test_id}",
-        },
+    session, _ = register_verified_account(
+        client,
+        full_name="Sync Owner",
+        email=email,
+        password="StrongPass123!",
+        business_name=f"Sync Shop {test_id}",
     )
-    assert response.status_code == 201, response.text
-    access_token = response.json()["access_token"]
+    access_token = session["access_token"]
     business_response = client.get(
         "/api/v1/businesses",
         headers={"Authorization": f"Bearer {access_token}"},
@@ -99,6 +98,7 @@ def test_offline_sync_push_de_dupes_sale_operations():
         headers=headers,
     )
     assert device.status_code == 201, device.text
+    assert device.json()["last_sync_at"] is None
     device_id = device.json()["id"]
 
     payload = {
@@ -122,6 +122,15 @@ def test_offline_sync_push_de_dupes_sale_operations():
     sync_results = push.json()
     assert len(sync_results) == 1
     assert sync_results[0]["state"] == "synced"
+
+    re_registered_device = client.post(
+        "/api/v1/sync/devices",
+        json={"device_name": "offline-phone", "device_type": "ios", "platform": "iPhone"},
+        headers=headers,
+    )
+    assert re_registered_device.status_code == 201, re_registered_device.text
+    assert re_registered_device.json()["id"] == device_id
+    assert datetime.fromisoformat(re_registered_device.json()["last_sync_at"])
 
     duplicated = client.post(
         "/api/v1/sync/push",

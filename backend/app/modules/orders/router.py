@@ -1,7 +1,9 @@
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -198,7 +200,10 @@ def create_order(
 @router.get("", response_model=list[OrderOut])
 def list_orders(
     store_id: str | None = Query(default=None),
-    status: str | None = Query(default=None),
+    status: Literal["draft", "confirmed", "preparing", "ready", "fulfilled", "converted", "cancelled"] | None = Query(default=None),
+    search: str | None = Query(default=None, min_length=1, max_length=120),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
     membership: Membership = Depends(get_business_membership),
     db: Session = Depends(get_db),
 ):
@@ -210,7 +215,13 @@ def list_orders(
         query = query.filter(Order.store_id.in_(membership.store_access or []))
     if status:
         query = query.filter(Order.status == status)
-    return query.order_by(Order.created_at.desc()).all()
+    if search:
+        term = f"%{search.strip()}%"
+        query = query.filter(or_(Order.order_number.ilike(term), Order.customer_name.ilike(term), Order.customer_phone.ilike(term)))
+    orders = query.order_by(Order.created_at.desc()).offset(offset).limit(limit).all()
+    for order in orders:
+        order.items = db.query(OrderItem).filter(OrderItem.order_id == order.id).order_by(OrderItem.product_name).all()
+    return orders
 
 
 @router.get("/{order_id}", response_model=OrderOut)

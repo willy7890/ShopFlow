@@ -6,23 +6,21 @@ from fastapi.testclient import TestClient
 from app.core.config import settings
 from app.main import app
 from app.modules.assistant import router as assistant_router
+from auth_test_support import register_verified_account
 
 client = TestClient(app)
 
 
 def _register_owner():
     test_id = uuid4().hex
-    response = client.post(
-        "/api/v1/auth/register",
-        json={
-            "full_name": "Assistant Owner",
-            "email": f"assistant-{test_id}@example.com",
-            "password": "StrongPass123!",
-            "business_name": f"Assistant Shop {test_id}",
-        },
+    session, _ = register_verified_account(
+        client,
+        full_name="Assistant Owner",
+        email=f"assistant-{test_id}@example.com",
+        password="StrongPass123!",
+        business_name=f"Assistant Shop {test_id}",
     )
-    assert response.status_code == 201, response.text
-    return response.json()
+    return session
 
 
 def _business_headers(payload, business_id: str):

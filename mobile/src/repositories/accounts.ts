@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite'
+import { withDatabaseTransaction } from '../database/transactions.ts'
 import { accountInput } from '../domain/validation.ts'
 import { writeCashbookEntry } from './cashbook.ts'
 import type { Workspace } from './workspace.ts'
@@ -65,7 +66,7 @@ export async function updateCustomer(
   const parsed = accountInput.safeParse(input)
   if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? 'Customer details are invalid.')
   const now = new Date().toISOString()
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     const result = await transaction.runAsync(
       `UPDATE customers SET name = ?, phone = ?
        WHERE id = ? AND business_id = ? AND is_active = 1`,
@@ -94,7 +95,7 @@ export async function setCustomerArchived(
 ): Promise<void> {
   await assertAnyPermission(database, workspace, ['sell', 'manage_customers'])
   const now = new Date().toISOString()
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     const result = await transaction.runAsync(
       'UPDATE customers SET is_active = ? WHERE id = ? AND business_id = ?',
       archived ? 0 : 1,
@@ -145,7 +146,7 @@ export async function createCustomer(
   if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? 'Customer details are invalid.')
   const id = createId()
   const now = new Date().toISOString()
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     await transaction.runAsync(
       'INSERT INTO customers (id, business_id, name, phone, created_at) VALUES (?, ?, ?, ?, ?)',
       id,
@@ -177,7 +178,7 @@ export async function recordCustomerPayment(
   const outboxId = createId()
   const now = new Date().toISOString()
   const cleanNote = validateNote(note)
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     const customer = await transaction.getFirstAsync<{ id: string }>(
       'SELECT id FROM customers WHERE id = ? AND business_id = ? AND is_active = 1',
       customerId,
@@ -266,7 +267,7 @@ export async function updateSupplier(
   const parsed = accountInput.safeParse(input)
   if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? 'Supplier details are invalid.')
   const now = new Date().toISOString()
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     const result = await transaction.runAsync(
       `UPDATE suppliers SET name = ?, phone = ?
        WHERE id = ? AND business_id = ? AND is_active = 1`,
@@ -295,7 +296,7 @@ export async function setSupplierArchived(
 ): Promise<void> {
   await assertAnyPermission(database, workspace, ['manage_inventory', 'manage_suppliers'])
   const now = new Date().toISOString()
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     const result = await transaction.runAsync(
       'UPDATE suppliers SET is_active = ? WHERE id = ? AND business_id = ?',
       archived ? 0 : 1,
@@ -341,7 +342,7 @@ export async function createSupplier(
   if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? 'Supplier details are invalid.')
   const id = createId()
   const now = new Date().toISOString()
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     await transaction.runAsync(
       'INSERT INTO suppliers (id, business_id, name, phone, created_at) VALUES (?, ?, ?, ?, ?)',
       id,
@@ -373,7 +374,7 @@ export async function recordSupplierBill(
   const outboxId = createId()
   const now = new Date().toISOString()
   const cleanNote = validateNote(note)
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     await assertSupplierExists(transaction, workspace.businessId, supplierId, true)
     await transaction.runAsync(
       `INSERT INTO supplier_ledger
@@ -412,7 +413,7 @@ export async function recordSupplierPayment(
   const outboxId = createId()
   const now = new Date().toISOString()
   const cleanNote = validateNote(note)
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     await assertSupplierExists(transaction, workspace.businessId, supplierId, true)
     const balance = await transaction.getFirstAsync<{ balanceMinor: number }>(
       `SELECT COALESCE(SUM(CASE

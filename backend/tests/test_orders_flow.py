@@ -3,6 +3,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from app.main import app
+from auth_test_support import register_verified_account
 
 client = TestClient(app)
 
@@ -10,17 +11,13 @@ client = TestClient(app)
 def _register_owner():
     test_id = uuid4().hex
     email = f"orders-{test_id}@example.com"
-    response = client.post(
-        "/api/v1/auth/register",
-        json={
-            "full_name": "Order Manager",
-            "email": email,
-            "password": "StrongPass123!",
-            "business_name": f"Orders Shop {test_id}",
-        },
+    payload, _ = register_verified_account(
+        client,
+        full_name="Order Manager",
+        email=email,
+        password="StrongPass123!",
+        business_name=f"Orders Shop {test_id}",
     )
-    assert response.status_code == 201, response.text
-    payload = response.json()
     businesses = client.get(
         "/api/v1/businesses",
         headers={"Authorization": f"Bearer {payload['access_token']}"},
@@ -118,6 +115,12 @@ def test_order_lifecycle_invoice_generation_and_sale_conversion():
     order = order_response.json()
     assert order["status"] == "draft"
     assert order["total_amount"] == "1200.00"
+    listed = client.get("/api/v1/orders", params={"search": "Jane Customer", "limit": 1, "offset": 0}, headers={**headers, "X-Store-ID": store_id})
+    assert listed.status_code == 200, listed.text
+    assert len(listed.json()) == 1
+    assert listed.json()[0]["id"] == order["id"]
+    assert listed.json()[0]["items"][0]["product_name"]
+    assert client.get("/api/v1/orders", params={"search": "not-a-match"}, headers={**headers, "X-Store-ID": store_id}).json() == []
 
     confirm_response = client.post(f"/api/v1/orders/{order['id']}/confirm", headers={**headers, "X-Store-ID": store_id})
     assert confirm_response.status_code == 200, confirm_response.text

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, Navigate, useLocation } from 'react-router-dom'
-import { LayoutDashboard, ShoppingCart, Package, Tags, Boxes, Truck, Receipt, FileText, Users, Store, Wallet, HandCoins, BookOpen, BarChart3, Sparkles, UserCog, Building2, CreditCard, Settings, Menu, Sun, Moon, LogOut, Wifi, WifiOff, PanelLeft, ShieldCheck } from 'lucide-react'
+import { LayoutDashboard, ShoppingCart, Package, Tags, Boxes, Truck, Receipt, FileText, Users, Store, Wallet, HandCoins, BookOpen, BarChart3, Sparkles, UserCog, Building2, CreditCard, Settings, Menu, Sun, Moon, LogOut, Wifi, WifiOff, PanelLeft, ShieldCheck, ClipboardList } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useAuth } from '@/store/auth'
 import { api } from '@/api'
@@ -13,22 +13,23 @@ import { Toast } from './ui'
 interface Item { id: string; path: string; icon: LucideIcon; perm: string; feature?: string; inventoryOnly?: boolean; superAdminOnly?: boolean }
 export const NAV: Item[] = [
   { id: 'dash', path: '/', icon: LayoutDashboard, perm: 'dash' },
-  { id: 'pos', path: '/pos', icon: ShoppingCart, perm: 'pos' },
-  { id: 'products', path: '/products', icon: Package, perm: 'catalog', feature: 'inventory', inventoryOnly: true },
-  { id: 'categories', path: '/categories', icon: Tags, perm: 'catalog', feature: 'inventory', inventoryOnly: true },
+  { id: 'pos', path: '/pos', icon: ShoppingCart, perm: 'pos', feature: 'sales_pos' },
+  { id: 'products', path: '/products', icon: Package, perm: 'catalog', feature: 'product_management', inventoryOnly: true },
+  { id: 'categories', path: '/categories', icon: Tags, perm: 'catalog', feature: 'product_categories', inventoryOnly: true },
   { id: 'inventory', path: '/inventory', icon: Boxes, perm: 'inventory', feature: 'inventory', inventoryOnly: true },
   { id: 'purchases', path: '/purchases', icon: Truck, perm: 'purchases', feature: 'inventory', inventoryOnly: true },
-  { id: 'sales', path: '/sales', icon: Receipt, perm: 'sales' },
-  { id: 'invoices', path: '/invoices', icon: FileText, perm: 'sales' },
-  { id: 'customers', path: '/customers', icon: Users, perm: 'customers' },
-  { id: 'suppliers', path: '/suppliers', icon: Store, perm: 'purchases' },
-  { id: 'expenses', path: '/expenses', icon: Wallet, perm: 'finance' },
-  { id: 'debts', path: '/debts', icon: HandCoins, perm: 'customers' },
-  { id: 'cashbook', path: '/cashbook', icon: BookOpen, perm: 'finance' },
+  { id: 'sales', path: '/sales', icon: Receipt, perm: 'sales', feature: 'sales_pos' },
+  { id: 'orders', path: '/orders', icon: ClipboardList, perm: 'sales', feature: 'sales_pos' },
+  { id: 'invoices', path: '/invoices', icon: FileText, perm: 'sales', feature: 'invoices' },
+  { id: 'customers', path: '/customers', icon: Users, perm: 'customers', feature: 'customers' },
+  { id: 'suppliers', path: '/suppliers', icon: Store, perm: 'purchases', feature: 'supplier_management' },
+  { id: 'expenses', path: '/expenses', icon: Wallet, perm: 'finance', feature: 'cashbook' },
+  { id: 'debts', path: '/debts', icon: HandCoins, perm: 'customers', feature: 'customer_debtors' },
+  { id: 'cashbook', path: '/cashbook', icon: BookOpen, perm: 'finance', feature: 'cashbook' },
   { id: 'reports', path: '/reports', icon: BarChart3, perm: 'reports' },
-  { id: 'ai', path: '/ai', icon: Sparkles, perm: 'ai', feature: 'ai' },
-  { id: 'employees', path: '/employees', icon: UserCog, perm: 'employees' },
-  { id: 'stores', path: '/stores', icon: Building2, perm: 'stores', feature: 'multistore' },
+  { id: 'ai', path: '/ai', icon: Sparkles, perm: 'ai', feature: 'advanced_analytics' },
+  { id: 'employees', path: '/employees', icon: UserCog, perm: 'employees', feature: 'employee_management' },
+  { id: 'stores', path: '/stores', icon: Building2, perm: 'stores', feature: 'multi_store' },
   { id: 'subscription', path: '/subscription', icon: CreditCard, perm: 'subscription' },
   { id: 'settings', path: '/settings', icon: Settings, perm: 'settings' },
   { id: 'platformAdmin', path: '/platform-admin', icon: ShieldCheck, perm: '', superAdminOnly: true },
@@ -36,7 +37,7 @@ export const NAV: Item[] = [
 /** Visibility rules: backend permissions + backend entitlements + operating mode. (The API enforces the same rules.) */
 export function useVisibleNav() {
   const { me, can, feature } = useAuth()
-  if (me?.user.isSuperAdmin && !me.business) return NAV.filter((item) => item.superAdminOnly)
+  if (me?.user.isSuperAdmin) return NAV
   const quick = me?.business?.mode === 'quick'
   return NAV.filter((n) => n.superAdminOnly
     ? !!me?.user.isSuperAdmin
@@ -47,6 +48,7 @@ export const useRouteAllowed = (path: string) => useVisibleNav().some((n) => (n.
 export default function AppShell() {
   const { me, token, logout, storeId, setStore, setMe } = useAuth()
   const [profileError, setProfileError] = useState('')
+  const [adminBusinesses, setAdminBusinesses] = useState<{ id: string; name: string }[]>([])
   const { t, lang } = useT()
   const ui = useUi()
   const nav = useVisibleNav()
@@ -69,6 +71,14 @@ export default function AppShell() {
     }
     return () => { active = false }
   }, [setMe, token])
+  useEffect(() => {
+    let active = true
+    if (token && isSuperAdmin) {
+      void api.business.access().then((items) => { if (active) setAdminBusinesses(items) })
+        .catch((reason: unknown) => { if (active) setProfileError(reason instanceof Error ? reason.message : String(reason)) })
+    }
+    return () => { active = false }
+  }, [isSuperAdmin, token])
   useEffect(() => {
     if (me && storeId !== 'all' && !me.stores.some((store) => store.id === storeId)) {
       setStore('all')
@@ -97,6 +107,23 @@ export default function AppShell() {
           <button className="btn btn-ghost md:hidden !min-h-[38px] !px-2" aria-label="Menu" onClick={() => ui.setMenu(!ui.menuOpen)}><Menu size={18} /></button>
           <button className="btn btn-ghost hidden md:inline-flex !min-h-[38px] !px-2" aria-label="Collapse" onClick={ui.toggleCollapsed}><PanelLeft size={18} /></button>
           <b className="truncate max-w-[180px]">{me.business?.name ?? t('platformAdmin')}</b>
+          {isSuperAdmin && me.business && <span className="text-xs text-mu">Super Admin business access</span>}
+          {isSuperAdmin && adminBusinesses.length > 0 && (
+            <select
+              aria-label="Business context"
+              className="inp !w-auto !min-h-[38px] !py-1"
+              value={me.business?.id ?? ''}
+              onChange={(event) => {
+                const id = event.target.value
+                void api.auth.me(id).then(setMe).catch((reason: unknown) => {
+                  setProfileError(reason instanceof Error ? reason.message : String(reason))
+                })
+              }}
+            >
+              <option value="">Platform administration</option>
+              {adminBusinesses.map((business) => <option key={business.id} value={business.id}>{business.name}</option>)}
+            </select>
+          )}
           {me.business ? (
             <select
               aria-label={t('store')}
@@ -119,7 +146,12 @@ export default function AppShell() {
         </header>
         <main className="p-4 md:p-6 pb-24 md:pb-6 max-w-[1200px]">
           {profileError && <p role="alert" className="text-er text-sm mb-3">{profileError}</p>}
-          {allowed ? <Outlet /> : <div><h1 className="text-2xl font-bold mb-2">{t('forbid')}</h1><p className="text-mu">{t('sb_lock')}</p></div>}
+          {allowed ? isSuperAdmin && !me.business && loc.pathname !== '/platform-admin' ? (
+            <section className="rounded-xl border border-bd bg-sf p-6" aria-labelledby="admin-business-context-title">
+              <h1 id="admin-business-context-title" className="text-2xl font-bold mb-2">Choose a business to inspect</h1>
+              {adminBusinesses.length ? <p className="text-mu">Select a business from the Business context menu above to open this module with platform-admin access.</p> : <p className="text-mu">No businesses are available yet. You can manage the platform from Platform Administration.</p>}
+            </section>
+          ) : <Outlet /> : <section role="alert" className="rounded-xl border border-er p-6"><h1 className="text-2xl font-bold mb-2">Unauthorized</h1><p className="text-mu">{t('sb_lock')}</p></section>}
         </main>
       </div>
       <nav className="md:hidden fixed bottom-0 inset-x-0 bg-sf border-t border-bd flex z-10" style={{ paddingBottom: 'env(safe-area-inset-bottom,0px)' }}>

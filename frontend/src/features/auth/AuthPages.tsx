@@ -1,4 +1,5 @@
 import { useForm } from 'react-hook-form'
+import { useState } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
@@ -10,7 +11,7 @@ import { Field } from '@/components/ui'
 import { AuthFrame, PasswordField } from './AuthFrame'
 
 const email = (t: TFn) => z.string().min(1, t('req')).email(t('bademail'))
-const pass = (t: TFn) => z.string().min(1, t('req')).min(8, t('minpass'))
+const pass = (t: TFn) => z.string().min(12, t('minpass')).refine((value) => /[a-z]/.test(value) && /[A-Z]/.test(value) && /\d/.test(value) && /[^A-Za-z0-9]/.test(value), t('strongpass'))
 const err = (e: unknown) => (e as Error)?.message
 
 export function Login() {
@@ -18,6 +19,7 @@ export function Login() {
   const schema = z.object({ email: email(t), password: pass(t) })
   const f = useForm<z.infer<typeof schema>>({ resolver: zodResolver(schema) })
   const m = useMutation({ mutationFn: (d: z.infer<typeof schema>) => api.auth.login(d.email, d.password), onSuccess: (r) => { setSession(r.token, r.me, r.refreshToken); nav(r.me.user.isSuperAdmin ? '/platform-admin' : r.me.business ? '/' : '/onboarding') } })
+  const resend = useMutation({ mutationFn: () => api.auth.resendVerification(f.getValues('email')) })
   return (
     <AuthFrame title={t('wb')}>
       <h1 className="text-3xl font-bold text-center mb-1">{t('login')}</h1><p className="text-mu text-center mb-6">{t('loginSub')}</p>
@@ -26,6 +28,9 @@ export function Login() {
         <Field label={t('email')} type="email" autoComplete="email" error={f.formState.errors.email?.message} {...f.register('email')} />
         <PasswordField label={t('pass')} autoComplete="current-password" error={f.formState.errors.password?.message} {...f.register('password')} />
         <Link className="lnk text-sm" to="/forgot">{t('forgot')}</Link>
+        <button type="button" className="lnk text-sm ml-3" disabled={resend.isPending} onClick={async () => { if (await f.trigger('email')) resend.mutate() }}>{resend.isPending ? t('wait') : t('verifyResend')}</button>
+        {resend.isSuccess && <p role="status" className="text-ok text-sm mt-2">{t('verifyResendDone')}</p>}
+        {resend.error && <p role="alert" className="text-er text-sm mt-2">{t('verifyResendError')}</p>}
         {m.error && <p className="text-er text-sm my-2" role="alert">{err(m.error)}</p>}
         <button className="btn w-full mt-2 !rounded-full" disabled={m.isPending}>{m.isPending ? t('wait') : t('login')}</button>
       </form>
@@ -35,13 +40,16 @@ export function Login() {
 }
 
 export function Register() {
-  const { t } = useT(); const nav = useNavigate(); const { setSession } = useAuth()
+  const { t } = useT(); const nav = useNavigate(); const [notice, setNotice] = useState(''); const [verificationEmail, setVerificationEmail] = useState('')
   const schema = z.object({ name: z.string().min(1, t('req')), email: email(t), password: pass(t) })
   const f = useForm<z.infer<typeof schema>>({ resolver: zodResolver(schema) })
-  const m = useMutation({ mutationFn: api.auth.register, onSuccess: (r) => { setSession(r.token, r.me, r.refreshToken); nav('/onboarding') } })
+  const m = useMutation({ mutationFn: api.auth.register, onSuccess: (r) => { setNotice(r.message); setVerificationEmail(r.email); f.reset({ name: f.getValues('name'), email: r.email, password: '' }) } })
+  const resend = useMutation({ mutationFn: () => api.auth.resendVerification(verificationEmail) })
   return (
     <AuthFrame title={t('wl')} reverse>
       <h1 className="text-3xl font-bold text-center mb-1">{t('reg')}</h1><p className="text-mu text-center mb-6">{t('regSub')}</p>
+      {notice && <p className="text-ok text-sm mb-3" role="status">{notice}</p>}
+      {verificationEmail && <><button type="button" className="lnk text-sm mb-3" disabled={resend.isPending} onClick={() => resend.mutate()}>{resend.isPending ? t('wait') : t('verifyResend')}</button>{resend.isSuccess && <p role="status" className="text-ok text-sm">{t('verifyResendDone')}</p>}{resend.error && <p role="alert" className="text-er text-sm">{t('verifyResendError')}</p>}</>}
       <form onSubmit={f.handleSubmit((d) => m.mutate(d))} noValidate>
         <Field label={t('name')} error={f.formState.errors.name?.message} {...f.register('name')} />
         <Field label={t('email')} type="email" error={f.formState.errors.email?.message} {...f.register('email')} />
@@ -64,7 +72,7 @@ export function Forgot() {
       <h1 className="text-2xl font-bold text-center mb-1">{t('fTitle')}</h1><p className="text-mu text-center mb-6">{t('fSub')}</p>
       <form onSubmit={f.handleSubmit((d) => m.mutate(d))} noValidate>
         <Field label={t('email')} type="email" error={f.formState.errors.email?.message} {...f.register('email')} />
-        {m.isSuccess && <p className="text-ok font-semibold mb-3" role="status">{t('sent')} <Link className="lnk" to="/reset?token=demo">{t('rs_open')}</Link></p>}
+        {m.isSuccess && <p className="text-ok font-semibold mb-3" role="status">{t('sent')}</p>}
         {m.error && <p className="text-er text-sm my-2" role="alert">{err(m.error)}</p>}
         <button className="btn w-full !rounded-full" disabled={m.isPending}>{m.isPending ? t('wait') : t('send')}</button>
       </form>

@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite'
+import { withDatabaseTransaction } from '../database/transactions.ts'
 import { ApiError, authenticatedApiRequest, hasOnlineSession, type SyncPushResult } from './api.ts'
 import { refreshRemoteStock } from './remoteCatalog.ts'
 import type { Workspace } from '../repositories/workspace.ts'
@@ -91,7 +92,7 @@ async function performSync(
     }
   })
   const deviceId = await getOrRegisterDevice(database, workspace.businessId, workspace.userId)
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     for (const row of rows) {
       await transaction.runAsync(
         `UPDATE outbox SET status = 'in_progress', attempt_count = attempt_count + 1,
@@ -127,7 +128,7 @@ async function performSync(
   const resultByClientId = new Map(results.map((result) => [result.client_id, result]))
   let synced = 0
   let failed = 0
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     for (const row of rows) {
       const result = resultByClientId.get(row.client_id)
       const status = result?.state === 'synced'
@@ -259,7 +260,7 @@ async function markBatchFailed(
   reason: unknown,
 ): Promise<void> {
   const message = reason instanceof Error ? reason.message : String(reason)
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     for (const row of rows) {
       await transaction.runAsync(
         `UPDATE outbox SET status = 'failed', last_error = ?

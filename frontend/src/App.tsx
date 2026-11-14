@@ -19,6 +19,7 @@ const router = createBrowserRouter([
       { path: 'inventory', element: L(() => import('@/features/inventory/Inventory')) },
       { path: 'purchases', element: L(() => import('@/features/people/Purchases')) },
       { path: 'sales', element: L(() => import('@/features/sales/Sales')) },
+      { path: 'orders', element: L(() => import('@/features/orders/Orders')) },
       { path: 'invoices', element: L(() => import('@/features/sales/Invoices')) },
       { path: 'customers', element: L(() => import('@/features/people/Customers')) },
       { path: 'suppliers', element: L(() => import('@/features/people/Suppliers')) },

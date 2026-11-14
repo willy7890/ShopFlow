@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite'
+import { withDatabaseTransaction } from '../database/transactions.ts'
 import { stockAdjustmentInput, type StockAdjustmentInput } from '../domain/validation.ts'
 import type { Workspace } from './workspace.ts'
 import { assertActiveWorkspace, assertPermission } from './workspace.ts'
@@ -46,7 +47,7 @@ export async function adjustStock(
   if (!variant.trackStock) throw new Error('Stock cannot be adjusted while this product is not tracked.')
 
   const now = new Date().toISOString()
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     await transaction.runAsync(
       `INSERT OR IGNORE INTO inventory_balances
          (id, business_id, store_id, variant_id, quantity, updated_at)

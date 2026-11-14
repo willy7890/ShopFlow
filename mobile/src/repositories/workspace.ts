@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite'
+import { withDatabaseTransaction } from '../database/transactions.ts'
 import { workspaceInput, type WorkspaceInput } from '../domain/validation.ts'
 import { createPasswordHash, verifyPasswordHash } from '../domain/credentials.ts'
 import type { ApiUser, BusinessAccess } from '../services/api.ts'
@@ -108,7 +109,7 @@ export async function activateRemoteWorkspace(
   }
   const now = new Date().toISOString()
 
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     const activeContext = await transaction.getFirstAsync<{ setting_value: string }>(
       "SELECT setting_value FROM app_settings WHERE setting_key = 'active_context'",
     )
@@ -205,7 +206,7 @@ export async function activateRemoteWorkspace(
 }
 
 export async function restoreLocalWorkspace(database: SQLiteDatabase): Promise<void> {
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     const activeContext = await transaction.getFirstAsync<{ setting_value: string }>(
       "SELECT setting_value FROM app_settings WHERE setting_key = 'active_context'",
     )
@@ -252,7 +253,7 @@ export async function createWorkspace(
   const now = new Date().toISOString()
   const credentials = await createPasswordHash(parsed.data.ownerPassword, createId())
 
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     await transaction.runAsync(
       'INSERT INTO businesses (id, name, created_at) VALUES (?, ?, ?)',
       businessId,
@@ -492,7 +493,7 @@ export async function authenticateUser(
   )
   if (!assignedStore) throw new Error('This account is not assigned to an active store.')
 
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     await transaction.runAsync(
       'UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?',
       user.id,
@@ -561,7 +562,7 @@ export async function initializeLegacyOwnerCredentials(
     throw new Error('Password must be between 8 and 128 characters.')
   }
   const credentials = await createPasswordHash(password, createId())
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     await transaction.runAsync(
       `UPDATE users SET display_name = ?, username = ?, password_salt = ?, password_hash = ?,
        password_iterations = ?

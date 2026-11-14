@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite'
+import { withDatabaseTransaction } from '../database/transactions.ts'
 import { multiplyMoney } from '../domain/money.ts'
 import { cashSaleInput, type CashSaleInput } from '../domain/validation.ts'
 import { writeCashbookEntry } from './cashbook.ts'
@@ -87,7 +88,7 @@ export async function createCashSale(
   let paidMinor = 0
   let balanceDueMinor = 0
 
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     const products: SaleProduct[] = []
     if (parsed.data.customerId) {
       const customer = await transaction.getFirstAsync<{ name: string }>(
@@ -471,7 +472,7 @@ export async function prepareSaleRefund(
   const now = new Date().toISOString()
   let request: SaleRefundRequest | null = null
 
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     const sale = await transaction.getFirstAsync<{ id: string }>(
       'SELECT id FROM sales WHERE id = ? AND business_id = ? AND store_id = ?',
       input.saleId,
@@ -539,7 +540,7 @@ export async function completeSaleRefund(
     throw new Error('The server returned an invalid refund amount.')
   }
   const now = new Date().toISOString()
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     const existing = await transaction.getFirstAsync<{
       amountMinor: number
       idempotencyKey: string

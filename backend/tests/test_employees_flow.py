@@ -3,6 +3,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from app.main import app
+from auth_test_support import register_verified_account
 
 client = TestClient(app)
 
@@ -10,17 +11,14 @@ client = TestClient(app)
 def _register_owner():
     test_id = uuid4().hex
     email = f"owner-{test_id}@example.com"
-    response = client.post(
-        "/api/v1/auth/register",
-        json={
-            "full_name": "Owner User",
-            "email": email,
-            "password": "StrongPass123!",
-            "business_name": f"Employee Shop {test_id}",
-        },
+    session, _ = register_verified_account(
+        client,
+        full_name="Owner User",
+        email=email,
+        password="StrongPass123!",
+        business_name=f"Employee Shop {test_id}",
     )
-    assert response.status_code == 201, response.text
-    token = response.json()["access_token"]
+    token = session["access_token"]
     business_response = client.get(
         "/api/v1/businesses",
         headers={"Authorization": f"Bearer {token}"},
@@ -46,17 +44,14 @@ def test_employee_management_and_store_access():
     second_store_id = second_store.json()["id"]
 
     team_member_email = f"employee-{uuid4().hex}@example.com"
-    register_response = client.post(
-        "/api/v1/auth/register",
-        json={
-            "full_name": "Cashier User",
-            "email": team_member_email,
-            "password": "StrongPass123!",
-            "business_name": f"Team Member Business {uuid4().hex}",
-        },
+    employee_session, _ = register_verified_account(
+        client,
+        full_name="Cashier User",
+        email=team_member_email,
+        password="StrongPass123!",
+        business_name=f"Team Member Business {uuid4().hex}",
     )
-    assert register_response.status_code == 201, register_response.text
-    employee_token = register_response.json()["access_token"]
+    employee_token = employee_session["access_token"]
 
     invite = client.post(
         "/api/v1/employees/invite",
@@ -125,17 +120,14 @@ def test_employee_permissions_can_be_granted_and_manager_scope_is_limited():
     store_id = stores.json()[0]["id"]
 
     manager_email = f"manager-{uuid4().hex}@example.com"
-    manager_registration = client.post(
-        "/api/v1/auth/register",
-        json={
-            "full_name": "Access Manager",
-            "email": manager_email,
-            "password": "StrongPass123!",
-            "business_name": f"Manager Business {uuid4().hex}",
-        },
+    manager_session, _ = register_verified_account(
+        client,
+        full_name="Access Manager",
+        email=manager_email,
+        password="StrongPass123!",
+        business_name=f"Manager Business {uuid4().hex}",
     )
-    assert manager_registration.status_code == 201, manager_registration.text
-    manager_token = manager_registration.json()["access_token"]
+    manager_token = manager_session["access_token"]
     manager_invite = client.post(
         "/api/v1/employees/invite",
         json={
@@ -150,16 +142,13 @@ def test_employee_permissions_can_be_granted_and_manager_scope_is_limited():
     manager_headers = {"Authorization": f"Bearer {manager_token}", "X-Business-ID": business_id}
 
     employee_email = f"staff-{uuid4().hex}@example.com"
-    employee_registration = client.post(
-        "/api/v1/auth/register",
-        json={
-            "full_name": "Shop Employee",
-            "email": employee_email,
-            "password": "StrongPass123!",
-            "business_name": f"Staff Business {uuid4().hex}",
-        },
+    register_verified_account(
+        client,
+        full_name="Shop Employee",
+        email=employee_email,
+        password="StrongPass123!",
+        business_name=f"Staff Business {uuid4().hex}",
     )
-    assert employee_registration.status_code == 201, employee_registration.text
     invited = client.post(
         "/api/v1/employees/invite",
         json={

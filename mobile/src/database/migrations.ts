@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite'
+import { withDatabaseTransaction } from './transactions.ts'
 
 const INITIAL_SCHEMA = `
 CREATE TABLE businesses (
@@ -486,84 +487,84 @@ export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {
   }
 
   if (currentVersion === 0) {
-    await database.withExclusiveTransactionAsync(async (transaction) => {
+    await withDatabaseTransaction(database, async (transaction) => {
       await transaction.execAsync(INITIAL_SCHEMA)
       await transaction.execAsync('PRAGMA user_version = 1;')
     })
   }
 
   if (currentVersion < 2) {
-    await database.withExclusiveTransactionAsync(async (transaction) => {
+    await withDatabaseTransaction(database, async (transaction) => {
       await transaction.execAsync(PHASE_TWO_SCHEMA)
       await transaction.execAsync('PRAGMA user_version = 2;')
     })
   }
 
   if (currentVersion < 3) {
-    await database.withExclusiveTransactionAsync(async (transaction) => {
+    await withDatabaseTransaction(database, async (transaction) => {
       await transaction.execAsync(PHASE_THREE_SCHEMA)
       await transaction.execAsync('PRAGMA user_version = 3;')
     })
   }
 
   if (currentVersion < 4) {
-    await database.withExclusiveTransactionAsync(async (transaction) => {
+    await withDatabaseTransaction(database, async (transaction) => {
       await transaction.execAsync(PHASE_FOUR_SCHEMA)
       await transaction.execAsync('PRAGMA user_version = 4;')
     })
   }
 
   if (currentVersion < 5) {
-    await database.withExclusiveTransactionAsync(async (transaction) => {
+    await withDatabaseTransaction(database, async (transaction) => {
       await transaction.execAsync(PHASE_FIVE_SCHEMA)
       await transaction.execAsync('PRAGMA user_version = 5;')
     })
   }
 
   if (currentVersion < 6) {
-    await database.withExclusiveTransactionAsync(async (transaction) => {
+    await withDatabaseTransaction(database, async (transaction) => {
       await transaction.execAsync(PHASE_SIX_SCHEMA)
       await transaction.execAsync('PRAGMA user_version = 6;')
     })
   }
 
   if (currentVersion < 7) {
-    await database.withExclusiveTransactionAsync(async (transaction) => {
+    await withDatabaseTransaction(database, async (transaction) => {
       await transaction.execAsync(PHASE_SEVEN_SCHEMA)
       await transaction.execAsync('PRAGMA user_version = 7;')
     })
   }
 
   if (currentVersion < 8) {
-    await database.withExclusiveTransactionAsync(async (transaction) => {
+    await withDatabaseTransaction(database, async (transaction) => {
       await transaction.execAsync(PHASE_EIGHT_SCHEMA)
       await transaction.execAsync('PRAGMA user_version = 8;')
     })
   }
 
   if (currentVersion < 9) {
-    await database.withExclusiveTransactionAsync(async (transaction) => {
+    await withDatabaseTransaction(database, async (transaction) => {
       await transaction.execAsync(PHASE_NINE_SCHEMA)
       await transaction.execAsync('PRAGMA user_version = 9;')
     })
   }
 
   if (currentVersion < 10) {
-    await database.withExclusiveTransactionAsync(async (transaction) => {
+    await withDatabaseTransaction(database, async (transaction) => {
       await transaction.execAsync(PHASE_TEN_SCHEMA)
       await transaction.execAsync('PRAGMA user_version = 10;')
     })
   }
 
   if (currentVersion < 11) {
-    await database.withExclusiveTransactionAsync(async (transaction) => {
+    await withDatabaseTransaction(database, async (transaction) => {
       await transaction.execAsync(PHASE_ELEVEN_SCHEMA)
       await transaction.execAsync('PRAGMA user_version = 11;')
     })
   }
 
   if (currentVersion < 12) {
-    await database.withExclusiveTransactionAsync(async (transaction) => {
+    await withDatabaseTransaction(database, async (transaction) => {
       await transaction.execAsync(PHASE_TWELVE_SCHEMA)
       await transaction.execAsync('PRAGMA user_version = 12;')
     })

@@ -67,6 +67,20 @@ Configure the backend service with root directory `backend`, build command `pip 
 
 Set `APP_ENV=production`, `DATABASE_URL` to the Render PostgreSQL **internal** connection URL, `SECRET_KEY` to a newly generated random value of at least 32 characters, and `CORS_ORIGINS` to a comma-separated list of deployed web origins. Production startup rejects SQLite and the built-in development signing key. The liveness/readiness endpoint is `/health`; API docs are at `/api/v1/docs`.
 
+### Super Admin bootstrap
+
+Set `SUPER_ADMIN_EMAIL` to the one designated platform administrator email and set `SUPER_ADMIN_BOOTSTRAP_SECRET` to a separate high-entropy secret in the backend environment. Never put the bootstrap secret in the mobile app or source control. Public registration never assigns the platform role. To activate it, the account must exist, be active, have a verified email, authenticate normally, and call `POST /api/v1/subscriptions/admin/bootstrap` with its bearer token and `X-Super-Admin-Bootstrap-Secret`. The operation is idempotent, refuses a second Super Admin, and records the assignment in the platform audit log.
+
+If bootstrap reports an existing Super Admin but the configured, verified account is not one, inspect the `users.is_super_admin` identities and platform audit log. Migration `9d62b6f24ac1` adds the single-Super-Admin database invariant and never grants or transfers the role. It stops before adding the index if multiple flagged accounts exist. Resolve that case through the authenticated, audited primary-account recovery flow, then deploy the schema migration. Afterward, confirm `/api/v1/auth/me` and platform admin endpoints using a normal session for the intended account.
+
+### Email verification delivery
+
+Set `EMAIL_VERIFICATION_BASE_URL` to the publicly reachable `/api/v1/auth/verify-email` endpoint. Use an HTTPS URL in deployed environments. Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM_EMAIL`, and either authenticated `SMTP_USERNAME`/`SMTP_PASSWORD` or leave both blank for a relay that permits unauthenticated delivery. Use `SMTP_STARTTLS=true` for STARTTLS (usually port 587), or `SMTP_USE_SSL=true` for implicit TLS (usually port 465); do not enable both. Keep provider credentials only in backend environment settings. Verification links contain random tokens in a URL fragment so normal HTTP access logs do not receive them; only token hashes are stored in the database. Links expire after `EMAIL_VERIFICATION_TOKEN_MINUTES`, are single-use, and a resend invalidates older links. Resends are limited per account by the configured cooldown and hourly maximum.
+
+If SMTP or the verification URL is not configured, registration succeeds but returns `email_sent: false`; no token or fake link is issued. Once configured, use the app's **Resend verification email** action for an existing unverified account. Verify provider delivery before deploying by registering a test address and confirming that the delivered link reaches the configured HTTPS endpoint and that reusing it is rejected.
+
+Password reset uses the same SMTP sender and hashed, single-use token storage. Set `PASSWORD_RESET_BASE_URL` to the public `/api/v1/auth/password-reset` page and tune `PASSWORD_RESET_TOKEN_MINUTES`, `PASSWORD_RESET_RESEND_COOLDOWN_SECONDS`, and `PASSWORD_RESET_MAX_PER_HOUR` as needed. For local development, run Mailpit or another SMTP capture service on the host and port in `.env`; the example uses `127.0.0.1:1025` and sends no real email unless you replace those settings.
+
 Generate a signing key locally with `python -c "import secrets; print(secrets.token_urlsafe(48))"` and enter it directly in Render's environment settings. Do not commit it or put it in mobile `EXPO_PUBLIC_*` variables.
 
 ## Business assistant provider

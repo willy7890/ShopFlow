@@ -6,7 +6,7 @@ import { useSQLiteContext } from 'expo-sqlite'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { Button, Card, Field, LoadingState, PageTitle, Screen } from '@/src/components/NativeUi'
 import { BarcodeScanner } from '@/src/components/BarcodeScanner'
-import { formatTzs, multiplyMoney, parseTzsAmount } from '@/src/domain/money'
+import { cartTotal, formatTzs, multiplyMoney, parseTzsAmount } from '@/src/domain/money'
 import { listCustomers, type CustomerAccount } from '@/src/repositories/accounts'
 import { createCashSale } from '@/src/repositories/sales'
 import { findProductByBarcode, listProducts, type LocalProduct } from '@/src/repositories/catalog'
@@ -80,10 +80,10 @@ export default function PosScreen() {
   }, [load, localizeError]))
 
   const selected = products.filter((product) => (cart[product.variantId] ?? 0) > 0)
-  const totalMinor = useMemo(() => selected.reduce(
-    (sum, product) => sum + multiplyMoney(product.sellPriceMinor, cart[product.variantId] ?? 0),
-    0,
-  ), [cart, selected])
+  const totalMinor = useMemo(() => cartTotal(selected.map((product) => ({
+    unitAmount: product.sellPriceMinor,
+    quantity: cart[product.variantId] ?? 0,
+  }))), [cart, selected])
   const tenderedMinor = parseTzsAmount(cashTendered)
 
   const changeQuantity = (product: LocalProduct, increment: number): boolean => {
@@ -96,10 +96,10 @@ export default function PosScreen() {
     setError(null)
     setReceipt(null)
     setCart((items) => ({ ...items, [product.variantId]: next }))
-    const nextTotal = selected.reduce(
-      (sum, item) => sum + multiplyMoney(item.sellPriceMinor, item.variantId === product.variantId ? next : cart[item.variantId] ?? 0),
-      0,
-    ) + (selected.some((item) => item.variantId === product.variantId) ? 0 : multiplyMoney(product.sellPriceMinor, next))
+    const nextTotal = cartTotal(products.map((item) => ({
+      unitAmount: item.sellPriceMinor,
+      quantity: item.variantId === product.variantId ? next : cart[item.variantId] ?? 0,
+    })))
     setCashTendered(String(nextTotal))
     return true
   }

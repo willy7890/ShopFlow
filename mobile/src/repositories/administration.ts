@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite'
+import { withDatabaseTransaction } from '../database/transactions.ts'
 import { createPasswordHash } from '../domain/credentials.ts'
 import {
   employeeInput,
@@ -50,7 +51,7 @@ export async function createStore(
   )
   if (duplicateCode) throw new Error('That store code is already in use.')
   const storeId = createId()
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     await transaction.runAsync(
       'INSERT INTO stores (id, business_id, name, code, created_at) VALUES (?, ?, ?, ?, ?)',
       storeId,
@@ -125,7 +126,7 @@ export async function createEmployee(
   const userId = createId()
   const now = new Date().toISOString()
   const credentials = await createPasswordHash(parsed.data.password, createId())
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     await transaction.runAsync(
       `INSERT INTO users
          (id, business_id, display_name, role, username, password_salt, password_hash,
@@ -187,7 +188,7 @@ export async function updateEmployeeAccess(
     )
     if (stores.length !== uniqueStoreIds.length) throw new Error('Choose only active stores in this business.')
   }
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     await transaction.runAsync('DELETE FROM user_store_permissions WHERE user_id = ?', employeeId)
     for (const storeId of uniqueStoreIds) {
       for (const permission of permissions) {
@@ -289,7 +290,7 @@ export async function saveLocalPreferences(
   ) {
     throw new Error('Choose a valid, consistent appearance and sales mode.')
   }
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await withDatabaseTransaction(database, async (transaction) => {
     for (const [key, value] of [['theme', preferences.theme]]) {
       await transaction.runAsync(
         `INSERT INTO app_settings (setting_key, setting_value) VALUES (?, ?)

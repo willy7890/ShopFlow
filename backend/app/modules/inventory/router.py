@@ -1,6 +1,6 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.core.database import get_db
@@ -235,9 +235,22 @@ def list_stock(store_id: str, membership: Membership = Depends(get_business_memb
     return db.query(InventoryBalance).filter(InventoryBalance.business_id == membership.business_id, InventoryBalance.store_id == store_id).all()
 
 @router.get("/movements", response_model=list[StockMovementOut])
-def list_movements(store_id: str, membership: Membership = Depends(get_business_membership), db: Session = Depends(get_db)):
+def list_movements(
+    store_id: str,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    membership: Membership = Depends(get_business_membership),
+    db: Session = Depends(get_db),
+):
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(status_code=422, detail="start_date must be on or before end_date.")
     store = db.query(Store).filter(Store.id == store_id, Store.business_id == membership.business_id).first()
     if not store: raise HTTPException(status_code=404, detail="Store not found")
     if membership.role != "owner" and store_id not in (membership.store_access or []):
         raise HTTPException(status_code=403, detail="No access to this store")
-    return db.query(StockMovement).filter(StockMovement.business_id == membership.business_id, StockMovement.store_id == store_id).order_by(StockMovement.created_at.desc()).limit(500).all()
+    query = db.query(StockMovement).filter(StockMovement.business_id == membership.business_id, StockMovement.store_id == store_id)
+    if start_date:
+        query = query.filter(func.date(StockMovement.created_at) >= start_date.isoformat())
+    if end_date:
+        query = query.filter(func.date(StockMovement.created_at) <= end_date.isoformat())
+    return query.order_by(StockMovement.created_at.desc()).limit(500).all()
